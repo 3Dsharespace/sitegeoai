@@ -100,7 +100,6 @@ export default function MapView({
   const siteSuggestions = useProjectStore((s) => s.siteSuggestions);
   const highlightedSuggestionId = useProjectStore((s) => s.highlightedSuggestionId);
   const vertices = useProjectStore((s) => s.drawVertices);
-  const measureUnit = useProjectStore((s) => s.measureUnit);
   const editVertices = useProjectStore((s) => s.editVertices);
   const corridorWidthM = useProjectStore((s) => s.corridorWidthM);
   const snapEnabled = useProjectStore((s) => s.snapEnabled);
@@ -777,12 +776,11 @@ export default function MapView({
     applyBasemapVisibility(map, basemap);
   }, [basemap, ready]);
 
-  // --- overlay layer visibility ---
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !ready) return;
     applyOverlayVisibility(map, layers);
-  }, [layers.buildings, layers.roads, ready]);
+  }, [layers, ready]);
 
   // --- cursor style ---
   useEffect(() => {

@@ -9,7 +9,7 @@ import {
   roadWidthM,
   type Scene3DLayerKey,
 } from "@/lib/cesium-scene";
-import { formatAreaForUnit, formatDistanceForUnit, haversineM, lineLengthM } from "@/lib/geo";
+import { formatDistanceForUnit, haversineM, lineLengthM } from "@/lib/geo";
 import {
   createCesiumBasemapProvider,
   fetchMapRuntimeConfig,
@@ -126,6 +126,7 @@ export default function CesiumView({
     [useModelLayers, modelLayers, layers.projectModel, layers.excavation],
   );
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const getDs = (viewer: any, Cesium: any, key: string) => {
     const map = dataSourcesRef.current;
     if (map.has(key)) return map.get(key)!;
@@ -141,6 +142,7 @@ export default function CesiumView({
 
   // Init viewer
   useEffect(() => {
+    const dataSources = dataSourcesRef.current;
     let cancelled = false;
     (async () => {
       try {
@@ -199,7 +201,7 @@ export default function CesiumView({
       handlerRef.current = null;
       tilesetRef.current = null;
       googleTilesetRef.current = null;
-      dataSourcesRef.current.clear();
+      dataSources.clear();
       viewerRef.current?.destroy?.();
       viewerRef.current = null;
     };

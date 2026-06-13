@@ -28,7 +28,6 @@ import type { GeoJSONGeometry } from "@/lib/types";
 import { toast } from "@/lib/toast";
 
 function ToolButton({
-  id,
   label,
   icon: Icon,
   active,
@@ -49,19 +48,32 @@ function ToolButton({
   const tooltip = hint ?? label;
 
   if (iconOnly) {
-    return (
+    const buttonClass = cn(
+      "h-8 w-8 flex items-center justify-center rounded-md border transition-colors shrink-0",
+      active
+        ? "bg-primary text-primary-foreground border-primary/50"
+        : "bg-card text-foreground border-border hover:bg-muted",
+    );
+
+    return active ? (
       <button
         type="button"
         title={tooltip}
         aria-label={label}
-        aria-pressed={active}
+        aria-pressed="true"
         onClick={onClick}
-        className={cn(
-          "h-8 w-8 flex items-center justify-center rounded-md border transition-colors shrink-0",
-          active
-            ? "bg-primary text-primary-foreground border-primary/50"
-            : "bg-card text-foreground border-border hover:bg-muted",
-        )}
+        className={buttonClass}
+      >
+        <Icon className="h-4 w-4 shrink-0" />
+      </button>
+    ) : (
+      <button
+        type="button"
+        title={tooltip}
+        aria-label={label}
+        aria-pressed="false"
+        onClick={onClick}
+        className={buttonClass}
       >
         <Icon className="h-4 w-4 shrink-0" />
       </button>
@@ -124,6 +136,26 @@ function ToolGrid({ iconOnly, children }: { iconOnly?: boolean; children: React.
 function ToolFullWidth({ iconOnly, children }: { iconOnly?: boolean; children: React.ReactNode }) {
   if (!iconOnly) return <>{children}</>;
   return <div className="col-span-4">{children}</div>;
+}
+
+function PanelSection({
+  title,
+  defaultOpen = true,
+  iconOnly,
+  children,
+}: {
+  title: string;
+  defaultOpen?: boolean;
+  iconOnly?: boolean;
+  children: React.ReactNode;
+}) {
+  return iconOnly ? (
+    <SidebarSection title={title}>{children}</SidebarSection>
+  ) : (
+    <CollapsibleSection title={title} defaultOpen={defaultOpen}>
+      {children}
+    </CollapsibleSection>
+  );
 }
 
 export default function DrawingToolsPanel({
@@ -204,26 +236,9 @@ export default function DrawingToolsPanel({
     toast("Copied", { variant: "success" });
   };
 
-  const PanelSection = ({
-    title,
-    defaultOpen = true,
-    children,
-  }: {
-    title: string;
-    defaultOpen?: boolean;
-    children: React.ReactNode;
-  }) =>
-    iconOnly ? (
-      <SidebarSection title={title}>{children}</SidebarSection>
-    ) : (
-      <CollapsibleSection title={title} defaultOpen={defaultOpen}>
-        {children}
-      </CollapsibleSection>
-    );
-
   return (
     <div className={cn("space-y-3", (compact || iconOnly) && "space-y-2")}>
-      <PanelSection title="Select & Suggest">
+      <PanelSection title="Select & Suggest" iconOnly={iconOnly}>
         <ToolGrid iconOnly={iconOnly}>
           <ToolButton
             id="select"
@@ -268,7 +283,7 @@ export default function DrawingToolsPanel({
         </ToolGrid>
       </PanelSection>
 
-      <PanelSection title="Define Site">
+      <PanelSection title="Define Site" iconOnly={iconOnly}>
         <ToolGrid iconOnly={iconOnly}>
           <ToolButton
             id="draw-rectangle"
@@ -475,7 +490,7 @@ export default function DrawingToolsPanel({
         )}
       </PanelSection>
 
-      <PanelSection title="Measure" defaultOpen={false}>
+      <PanelSection title="Measure" defaultOpen={false} iconOnly={iconOnly}>
         <ToolGrid iconOnly={iconOnly}>
           <ToolButton
             id="measure-distance"
@@ -570,7 +585,7 @@ export default function DrawingToolsPanel({
       )}
 
       {projectId != null && (
-        <SidebarSection title="Survey Mode">
+        <CollapsibleSection title="Survey Mode" defaultOpen={false}>
           <SurveyModePanel
             projectId={projectId}
             onStatusChange={(st) => {
@@ -601,7 +616,7 @@ export default function DrawingToolsPanel({
               );
             }}
           />
-        </SidebarSection>
+        </CollapsibleSection>
       )}
     </div>
   );

@@ -14,9 +14,10 @@ interface Props {
     vertical_rmse_m: number | null;
   } | null;
   onApplied: () => void;
+  compact?: boolean;
 }
 
-export default function OffsetCorrectionTool({ projectId, adjustment, onApplied }: Props) {
+export default function OffsetCorrectionTool({ projectId, adjustment, onApplied, compact }: Props) {
   const [e, setE] = useState(String(adjustment?.offset_e_m?.toFixed(4) ?? "0"));
   const [n, setN] = useState(String(adjustment?.offset_n_m?.toFixed(4) ?? "0"));
   const [busy, setBusy] = useState(false);
@@ -36,6 +37,26 @@ export default function OffsetCorrectionTool({ projectId, adjustment, onApplied 
       setBusy(false);
     }
   };
+
+  if (compact) {
+    return (
+      <div className="space-y-1.5 rounded border border-border p-2">
+        <p className="text-[10px] font-medium">GCP offset</p>
+        {adjustment.horizontal_rmse_m != null && (
+          <p className="text-[10px] text-muted-foreground">
+            RMSE H {adjustment.horizontal_rmse_m.toFixed(3)} m
+          </p>
+        )}
+        <div className="grid grid-cols-2 gap-1.5">
+          <Input value={e} onChange={(ev) => setE(ev.target.value)} className="h-7 text-xs" placeholder="ΔE" />
+          <Input value={n} onChange={(ev) => setN(ev.target.value)} className="h-7 text-xs" placeholder="ΔN" />
+        </div>
+        <Button size="sm" className="w-full h-7 text-xs" disabled={busy} onClick={apply}>
+          Apply
+        </Button>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-2 rounded border border-border p-2">

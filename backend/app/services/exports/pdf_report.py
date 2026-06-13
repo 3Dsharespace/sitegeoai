@@ -23,9 +23,12 @@ H1 = styles["Heading1"]
 H2 = styles["Heading2"]
 BODY = styles["BodyText"]
 WARN = ParagraphStyle("warn", parent=BODY, textColor=colors.HexColor("#8a1f1f"), fontSize=8)
+NOTE = ParagraphStyle("note", parent=BODY, textColor=colors.HexColor("#555555"), fontSize=9)
 
 
 def _bullets(items: list[str]) -> list:
+    if not items:
+        return [Paragraph("Data not available. Upload survey data or generate a design scenario first.", NOTE)]
     return [Paragraph(f"\u2022 {item}", BODY) for item in items]
 
 
@@ -39,10 +42,33 @@ def _kv_table(rows: list[tuple[str, str]]) -> Table:
     return table
 
 
-def build_pdf(project, analysis, scenario, estimate) -> bytes:
+def _validation_section(validation: dict | None) -> list:
+    if not validation:
+        return [Paragraph("Validation not run.", NOTE)]
+    out: list = []
+    out.append(_kv_table([
+        ("Accuracy tier", validation.get("accuracy_tier", "visual")),
+        ("Database mode", validation.get("database_mode", "unknown")),
+        ("Ready for design", "Yes" if validation.get("ready_for_design") else "No"),
+        ("Ready for BOQ", "Yes" if validation.get("ready_for_boq") else "No"),
+    ]))
+    warnings = validation.get("warnings") or []
+    if warnings:
+        out.append(Spacer(1, 0.3 * cm))
+        out.append(Paragraph("Validation warnings:", BODY))
+        out.extend(_bullets(warnings[:8]))
+    steps = validation.get("recommended_next_steps") or []
+    if steps:
+        out.append(Spacer(1, 0.3 * cm))
+        out.append(Paragraph("Recommended next steps:", BODY))
+        out.extend(_bullets(steps[:6]))
+    return out
+
+
+def build_pdf(project, analysis, scenario, estimate, validation: dict | None = None) -> bytes:
     buf = io.BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=A4, title=f"GeoAI Preliminary Plan - {project.name}")
-    design = scenario.design_output_json or {}
+    design = (scenario.design_output_json or {}) if scenario else {}
     calc = design.get("calculated", {})
     story = []
 
@@ -58,21 +84,39 @@ def build_pdf(project, analysis, scenario, estimate) -> bytes:
 
     # 2. Project summary
     story.append(Paragraph("2. Project Summary", H2))
-    story.append(Paragraph(design.get("summary", "No design generated yet."), BODY))
+    summary = design.get("summary") if scenario else None
+    story.append(Paragraph(
+        summary or "No design scenario generated yet. Open AI Design Studio to create a preliminary concept.",
+        BODY,
+    ))
+    loc = project.location_name or (
+        f"{project.center_lat}, {project.center_lng}" if project.center_lat is not None else "Not set"
+    )
+    boundary_area = validation.get("boundary_area_sqm") if validation else None
+    align_len = validation.get("alignment_length_m") if validation else None
     story.append(_kv_table([
-        ("Location", project.location_name or f"{project.center_lat}, {project.center_lng}"),
+        ("Location", loc),
         ("Status", project.status),
-        ("AI provider", design.get("ai_provider", "-")),
+        ("Accuracy tier", getattr(project, "accuracy_tier", None) or validation.get("accuracy_tier", "visual") if validation else "visual"),
+        ("Boundary area", f"{boundary_area:,.0f} sqm" if boundary_area else "Not available"),
+        ("Alignment length", f"{align_len:,.0f} m" if align_len else "Not available"),
+        ("AI provider", design.get("ai_provider", "Not generated")),
     ]))
 
     # 3 & 4. Map / model placeholders
     story.append(Paragraph("3. Location Map", H2))
-    story.append(Paragraph("[Location map image placeholder - view interactive map in the application]", BODY))
+    story.append(Paragraph(
+        "Interactive map available in the application. Export GeoJSON for GIS workflows.",
+        BODY,
+    ))
     story.append(Paragraph("4. 3D Model", H2))
-    story.append(Paragraph("[3D model screenshot placeholder - view interactive model in the application]", BODY))
+    story.append(Paragraph(
+        "Interactive 3D model available in the application when a design scenario has been generated.",
+        BODY,
+    ))
 
     # 5. Site analysis
-    story.append(Paragraph("5. Site Analysis", H2))
+    story.append(Paragraph("5. Site Analysis & Terrain", H2))
     if analysis is not None:
         story.append(_kv_table([
             ("Area", f"{analysis.area_sqm:,.0f} sqm" if analysis.area_sqm else "n/a"),
@@ -81,18 +125,29 @@ def build_pdf(project, analysis, scenario, estimate) -> bytes:
             ("Slope estimate", f"{analysis.slope_percent_estimate}%"),
         ]))
     else:
-        story.append(Paragraph("Site analysis not run.", BODY))
+        story.append(Paragraph("Site analysis not run. Run site analysis from the map or analysis page.", NOTE))
+
+    # Validation / survey grade
+    story.append(Paragraph("5b. Survey Grade & Validation", H2))
+    story.extend(_validation_section(validation))
 
     # 6. Assumptions
     story.append(Paragraph("6. Input Assumptions", H2))
-    story.extend(_bullets(design.get("assumptions", ["No assumptions recorded."])))
+    story.extend(_bullets(design.get("assumptions", []) if scenario else []))
 
     # 7 & 8. Design concept + dimensions
     story.append(Paragraph("7. Proposed Design Concept", H2))
-    story.extend(_bullets([f"{l['name']}: {l['description']}" for l in design.get("layers", [])]) or
-                 [Paragraph("n/a", BODY)])
+    if scenario and design.get("layers"):
+        story.extend(_bullets([f"{l['name']}: {l['description']}" for l in design.get("layers", [])]))
+    else:
+        story.append(Paragraph("Data not available. Generate a design scenario first.", NOTE))
+
     story.append(Paragraph("8. Dimensions", H2))
-    story.append(_kv_table([(k, v) for k, v in design.get("geometry", {}).items()]))
+    geom = design.get("geometry", {}) if scenario else {}
+    if geom:
+        story.append(_kv_table([(k, str(v)) for k, v in geom.items()]))
+    else:
+        story.append(Paragraph("Data not available.", NOTE))
 
     # 9. BOQ
     story.append(Paragraph("9. Quantity Estimate / BOQ", H2))
@@ -109,6 +164,8 @@ def build_pdf(project, analysis, scenario, estimate) -> bytes:
             ("FONTSIZE", (0, 0), (-1, -1), 8),
         ]))
         story.append(table)
+    else:
+        story.append(Paragraph("Data not available. Generate a design scenario first.", NOTE))
 
     # 10. Cost estimate
     story.append(Paragraph("10. Cost Estimate", H2))
@@ -120,23 +177,34 @@ def build_pdf(project, analysis, scenario, estimate) -> bytes:
             ("High", f"{cost.get('total_high', 0):,.0f} {cost.get('currency', '')}"),
             ("Contingency", f"{cost.get('contingency_percent', 0)}%"),
         ]))
+    else:
+        story.append(Paragraph("Data not available. Generate a design scenario first.", NOTE))
 
-    # 11. Construction sequence
-    story.append(Paragraph("11. Construction Sequence", H2))
-    story.extend([Paragraph(f"{i+1}. {step}", BODY)
-                  for i, step in enumerate(design.get("construction_sequence", []))])
+    # 11. Construction sequence / timeline
+    story.append(Paragraph("11. Construction Sequence & Timeline", H2))
+    seq = design.get("construction_sequence", []) if scenario else []
+    if seq:
+        story.extend([Paragraph(f"{i+1}. {step}", BODY) for i, step in enumerate(seq)])
+    else:
+        story.append(Paragraph("Data not available.", NOTE))
 
     # 12. Risks
-    story.append(Paragraph("12. Risk Checklist", H2))
-    story.extend(_bullets(design.get("risks", [])))
+    story.append(Paragraph("12. Risk Checklist & Limitations", H2))
+    story.extend(_bullets(design.get("risks", []) if scenario else []))
 
     # 13. Required surveys/approvals
     story.append(Paragraph("13. Required Surveys and Approvals", H2))
-    story.extend(_bullets(design.get("required_permissions", [])))
+    story.extend(_bullets(design.get("required_permissions", []) if scenario else []))
 
     # 14. Disclaimer
     story.append(Paragraph("14. Engineering Disclaimer", H2))
     story.append(Paragraph(DISCLAIMER, WARN))
+    story.append(Spacer(1, 0.5 * cm))
+    story.append(Paragraph(
+        "This report is preliminary planning output only — not for construction approval, "
+        "tender, or legal submission without licensed professional review.",
+        WARN,
+    ))
 
     def _footer(canvas, doc_):
         canvas.saveState()

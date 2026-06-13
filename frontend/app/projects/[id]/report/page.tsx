@@ -18,6 +18,7 @@ import { ProjectError, ProjectLoading } from "@/components/layout/ProjectHeader"
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import ProjectValidationPanel from "@/components/project/ProjectValidationPanel";
 import { useProjectData } from "@/hooks/useProjectData";
 import { api, apiUrl } from "@/lib/api";
 import type { DesignScenario } from "@/lib/types";
@@ -68,6 +69,8 @@ export default function ReportPage() {
           <p className="text-sm text-muted-foreground">Download reports, BOQ, models, and project data</p>
         </div>
 
+        <ProjectValidationPanel projectId={projectId} className="mb-2" defaultDetailsOpen={false} />
+
         <div className="grid md:grid-cols-2 gap-4">
           {EXPORTS.map(({ id, label, desc, icon: Icon, preview }, i) => (
             <motion.div
@@ -76,10 +79,10 @@ export default function ReportPage() {
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: i * 0.05, duration: 0.25 }}
             >
-              <a href={apiUrl(`/api/projects/${projectId}/exports/${id}`)}>
-                <Card float className="hover:border-primary/40 cursor-pointer h-full group transition-all duration-200">
+              <Card float className="hover:border-primary/40 cursor-pointer h-full group transition-all duration-200">
+                <a href={apiUrl(`/api/projects/${projectId}/exports/${id}`)} className="block">
                   <CardHeader className="flex-row items-start gap-3 space-y-0">
-                    <div className="flex h-10 w-10 items-center justify-center bg-primary/10 group-hover:bg-primary/15 transition-colors duration-200">
+                    <div className="flex h-10 w-10 items-center justify-center bg-primary/10 group-hover:bg-primary/15 transition-colors duration-200 rounded-lg">
                       <Icon className="h-5 w-5 text-primary" />
                     </div>
                     <div className="flex-1">
@@ -91,22 +94,21 @@ export default function ReportPage() {
                       <p className="text-[10px] text-muted-foreground mt-2 panel rounded px-2 py-1 inline-block">
                         Preview: {preview}
                       </p>
-                      {id === "pdf" && (
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.preventDefault();
-                            setShowPdfPreview(true);
-                          }}
-                          className="text-[10px] text-primary hover:underline mt-2 block"
-                        >
-                          Preview in browser
-                        </button>
-                      )}
                     </div>
                   </CardHeader>
-                </Card>
-              </a>
+                </a>
+                {id === "pdf" && (
+                  <CardContent className="pt-0 px-5 pb-4">
+                    <button
+                      type="button"
+                      onClick={() => setShowPdfPreview(true)}
+                      className="text-[10px] text-primary hover:underline"
+                    >
+                      Preview in browser
+                    </button>
+                  </CardContent>
+                )}
+              </Card>
             </motion.div>
           ))}
 

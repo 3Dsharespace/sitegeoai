@@ -61,7 +61,11 @@ def get_tile_providers() -> dict:
 
 
 def get_map_runtime_config() -> dict:
-    """Map client bootstrap secrets — configured in backend .env only."""
+    """Browser-only map keys for Cesium Ion / Google 3D Tiles (never AI or storage secrets).
+
+    Restrict these keys by HTTP referrer / domain in Google Cloud and Cesium Ion dashboards.
+    Mapbox satellite is proxied via /api/tiles and is not returned here.
+    """
     return {
         "cesium_ion_token": settings.CESIUM_ION_TOKEN or None,
         "google_maps_api_key": settings.GOOGLE_MAPS_API_KEY or None,

@@ -25,9 +25,16 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+_cors_origins = {
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+}
+if settings.NEXT_PUBLIC_APP_URL:
+    _cors_origins.add(settings.NEXT_PUBLIC_APP_URL.rstrip("/"))
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_origins=sorted(_cors_origins),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -39,6 +46,7 @@ app.mount("/files", StaticFiles(directory=settings.LOCAL_STORAGE_DIR), name="fil
 
 
 @app.get("/health")
+@app.get("/api/health")
 def health():
     return {"status": "ok", "disclaimer": DISCLAIMER}
 
@@ -56,11 +64,13 @@ from app.api.routes import (  # noqa: E402
     site_analysis,
     site_suggestions,
     survey,
+    system,
     templates,
     tiles,
 )
 
 app.include_router(projects.router)
+app.include_router(system.router)
 app.include_router(survey.router)
 app.include_router(auth.router)
 app.include_router(geocode.router)

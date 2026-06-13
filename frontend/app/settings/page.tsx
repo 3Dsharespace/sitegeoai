@@ -1,6 +1,7 @@
 import Link from "next/link";
-import { Key, Settings, Wrench } from "lucide-react";
+import { Key, Server, Settings, Wrench } from "lucide-react";
 import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import SystemStatusPanel from "@/components/settings/SystemStatusPanel";
 
 const SECTIONS = [
   {
@@ -30,8 +31,16 @@ export default function SettingsPage() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Settings</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            View provider status, rates, and project defaults
+            System status, provider configuration, rates, and project defaults
           </p>
+        </div>
+
+        <div className="space-y-2">
+          <div className="flex items-center gap-2 text-sm font-semibold">
+            <Server className="h-4 w-4 text-primary" />
+            Infrastructure status
+          </div>
+          <SystemStatusPanel />
         </div>
 
         <div className="grid gap-4">

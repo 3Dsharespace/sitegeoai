@@ -3,16 +3,39 @@ services:
     name: geoai-api
     runtime: python
     rootDir: backend
-    buildCommand: pip install -r requirements.txt
+    buildCommand: pip install -r requirements.txt && alembic upgrade head
     startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
     envVars:
       - key: DATABASE_URL
         sync: false
       - key: REDIS_URL
         sync: false
+      - key: S3_ENDPOINT
+        sync: false
+      - key: S3_BUCKET
+        sync: false
+      - key: S3_ACCESS_KEY
+        sync: false
+      - key: S3_SECRET_KEY
+        sync: false
       - key: APP_SECRET
         generateValue: true
+      - key: ENVIRONMENT
+        value: production
       - key: AUTH_REQUIRE_JWT
         value: "false"
       - key: NEXT_PUBLIC_APP_URL
         value: https://geoai.netlify.app
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GOOGLE_MAPS_API_KEY
+        sync: false
+      - key: CESIUM_ION_TOKEN
+        sync: false
+      - key: MAPBOX_TOKEN
+        sync: false

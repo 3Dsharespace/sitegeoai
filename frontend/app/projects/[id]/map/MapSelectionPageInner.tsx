@@ -4,6 +4,8 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useEffect } from "react";
 import BottomSummaryBar from "@/components/layout/BottomSummaryBar";
 import DrawingToolsPanel from "@/components/layout/DrawingToolsPanel";
+import { CollapsibleSection } from "@/components/ui/collapsible-section";
+import ProjectValidationPanel from "@/components/project/ProjectValidationPanel";
 import SiteSuggestionsPanel from "@/components/map/SiteSuggestionsPanel";
 import MobileAiDrawer from "@/components/layout/MobileAiDrawer";
 import MobileBottomNav from "@/components/layout/MobileBottomNav";
@@ -73,7 +75,11 @@ export default function MapSelectionPageInner() {
         />
       }
       middle={
-        <SiteSuggestionsPanel
+        <div className="space-y-3">
+          <CollapsibleSection title="Readiness" defaultOpen={false}>
+            <ProjectValidationPanel projectId={projectId} compact />
+          </CollapsibleSection>
+          <SiteSuggestionsPanel
           sidebar
           projectId={projectId}
           projectType={project.project_type}
@@ -82,6 +88,7 @@ export default function MapSelectionPageInner() {
           onApplyBoundary={async (s) => saveBoundary(s.geometry)}
           onApplyAlignment={async (s) => saveAlignment(s.geometry)}
         />
+        </div>
       }
     />
   );

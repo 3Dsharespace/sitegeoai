@@ -10,7 +10,8 @@ import { ProjectError, ProjectLoading } from "@/components/layout/ProjectHeader"
 import WorkspaceLayout from "@/components/layout/WorkspaceLayout";
 import WorkspaceLeftSidebar from "@/components/layout/WorkspaceLeftSidebar";
 import MapViewerArea from "@/components/map/MapViewerArea";
-import { SidebarSection } from "@/components/ui/collapsible-section";
+import { CollapsibleSection, SidebarSection } from "@/components/ui/collapsible-section";
+import ProjectValidationPanel from "@/components/project/ProjectValidationPanel";
 import JobStatusBar from "@/components/workspace/JobStatusBar";
 import ParameterForm from "@/components/workspace/ParameterForm";
 import { useProjectData } from "@/hooks/useProjectData";
@@ -137,6 +138,9 @@ export default function WorkspacePage() {
             onDeleteAlignment={deleteAlignment}
             onAnalyzeTerrain={analyzeSite}
           />
+          <CollapsibleSection title="Readiness" defaultOpen={false}>
+            <ProjectValidationPanel projectId={project.id} compact />
+          </CollapsibleSection>
           <SidebarSection title="Design Parameters">
             <div id="parameters-panel">
               <ParameterForm

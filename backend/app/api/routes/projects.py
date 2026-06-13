@@ -205,6 +205,19 @@ def get_project(project_id: int, db: Session = Depends(get_db), user_id: int = D
     return get_owned_project(project_id, db, user_id)
 
 
+@router.get("/{project_id}/validation")
+def get_project_validation(
+    project_id: int,
+    db: Session = Depends(get_db),
+    user_id: int = Depends(get_current_user_id),
+):
+    """Readiness checks before design generation, BOQ, and exports."""
+    from app.services.project_validation import validate_project
+
+    project = get_owned_project(project_id, db, user_id)
+    return validate_project(db, project)
+
+
 @router.put("/{project_id}", response_model=ProjectOut)
 def update_project(
     project_id: int,

@@ -1,7 +1,6 @@
 "use client";
 
 import { Box, Ruler, X } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import { formatAreaForUnit, formatDistanceForUnit } from "@/lib/geo";
 import { useProjectStore } from "@/stores/projectStore";
 

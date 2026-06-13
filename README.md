@@ -1,69 +1,95 @@
 # GeoAI 3D Construction Planner
 
-A preliminary planning tool that lets you select a real-world location, choose a
-construction project type (flyover, building, pipeline, road), and generate an
-AI-assisted preliminary 3D concept with quantity, excavation, cost, timeline,
-and risk estimates.
+A preliminary planning platform for civil and infrastructure projects: pick a real-world site, define boundaries and alignments, run site analysis, generate AI-assisted **concept** designs, and produce deterministic BOQ, cost, timeline, and export packages.
 
-> **IMPORTANT DISCLAIMER**
-> All generated designs, dimensions, material estimates, costs, reinforcement
-> assumptions, foundation depths, excavation quantities, and construction
-> methodology are **preliminary planning outputs only**. They are NOT final
-> structural drawings, NOT legal construction approval documents, and NOT a
-> replacement for licensed civil/structural/geotechnical engineers, surveyors,
-> architects, local authority approvals, or code compliance checks.
+> **IMPORTANT DISCLAIMER**  
+> All designs, quantities, costs, and schedules are **preliminary planning outputs only**. They are NOT final structural drawings, NOT legal construction approvals, and NOT a substitute for licensed engineers, surveyors, and authority sign-off.
 
 ## Stack
 
-- **Frontend** — Next.js (App Router, TypeScript, Tailwind), CesiumJS, MapLibre GL, Zustand, React Hook Form + Zod
-- **Backend** — FastAPI, SQLAlchemy + Alembic, PostGIS, Redis, Arq workers
-- **Storage** — MinIO (S3-compatible) for generated GLB models and PDF reports
-- **AI** — provider abstraction (OpenAI / Anthropic / Gemini / mock); all
-  quantities are computed by deterministic backend calculators, never guessed
-  by the LLM.
+| Layer | Technology |
+|-------|------------|
+| Frontend | Next.js (App Router), TypeScript, Tailwind, MapLibre GL, CesiumJS, Zustand |
+| Backend | FastAPI, SQLAlchemy, Alembic |
+| Database | PostGIS (production) · SQLite fallback (local demo) |
+| Jobs | Redis + Arq · in-process dev fallback |
+| Storage | MinIO/S3 · local filesystem dev fallback |
+| AI | OpenAI / Anthropic / Gemini / **mock** — quantities always from backend calculators |
 
-## Local development
+## Features
+
+- Landing, dashboard, new project wizard
+- Project workspace with map + 3D + AI design studio
+- Site analysis, BOQ/estimate, cost analysis, scenarios, timeline
+- Reports with PDF / CSV / GeoJSON / DXF export
+- Survey-grade mode: imports, CRS, GCP validation, accuracy tiers, mesh export
+- **Project validation** API and UI readiness checklist
+- **System status** (PostGIS vs SQLite, Redis, storage, providers)
+- Seeded demo: **Demo Flyover (Bengaluru)**
+
+## Quick start
 
 ```bash
 cp .env.example .env
-docker compose up -d          # PostGIS + Redis + MinIO
+docker compose up -d          # optional: PostGIS + Redis + MinIO
 
-# Backend
-cd backend
-python -m venv .venv && .venv\Scripts\activate   # (Windows)
-pip install -r requirements.txt
-alembic upgrade head
-uvicorn app.main:app --reload                    # http://localhost:8000
+cd backend && pip install -r requirements.txt && alembic upgrade head
+uvicorn app.main:app --reload  # http://localhost:8000
 
-# Worker (separate terminal, optional in dev)
-cd backend
-arq app.workers.tasks.WorkerSettings
-
-# Frontend
-cd frontend
-npm install
-npm run dev                                      # http://localhost:3000
+cd frontend && npm install && npm run dev  # http://localhost:3000
 ```
 
-### Running without Docker
+Without Docker, SQLite + mock providers work for the full demo flow. See **[LOCAL_SETUP.md](./LOCAL_SETUP.md)** for details.
 
-If Docker is unavailable, the backend automatically falls back to:
+## Documentation
 
-- **SQLite** (`backend/dev.db`) instead of PostGIS — boundaries are stored as
-  GeoJSON; spatial queries are computed with Shapely in Python.
-- **In-process job execution** instead of Redis/Arq.
-- **Local filesystem** (`backend/storage/`) instead of MinIO.
+- **[LOCAL_SETUP.md](./LOCAL_SETUP.md)** — dev environment, env vars, migrations, tests, demo flow
+- **[DEPLOYMENT.md](./DEPLOYMENT.md)** — Netlify frontend, Render backend, PostGIS, security
+- **[MANUAL_QA.md](./MANUAL_QA.md)** — browser QA checklist before demo/deploy
 
-All external APIs (geocoding, OSM Overpass, terrain, LLMs) have mock providers
-so the full flow works offline with no API keys.
+## API
+
+Interactive docs: http://localhost:8000/docs
+
+Key endpoints:
+
+- `GET /health`
+- `GET /api/system/status`
+- `GET /api/projects/demo`
+- `GET /api/projects/{id}/validation`
+- `GET /api/projects/{id}/exports/pdf`
+
+## Accuracy tiers
+
+| Tier | Label | Use |
+|------|-------|-----|
+| `visual` | Visual | Concept / client preview |
+| `gis_grade` | GIS | Planning GIS workflows |
+| `survey_grade` | Survey | Survey-adjusted geometry |
+| `engineering_ready` | Engineering ready | Highest input confidence (still preliminary output) |
+
+Full survey workflows require **PostGIS**. SQLite shows **Limited GIS mode** in Settings.
+
+## Tests
+
+```bash
+cd backend
+pytest
+```
+
+Covers health, demo project, validation, calculators, cost/timeline/UTM, survey import safety, PDF export.
 
 ## Project structure
 
 ```
-frontend/   Next.js app (landing, dashboard, workspace, analysis, estimate, report, admin)
-backend/    FastAPI app (API routes, services, calculators, AI orchestrator, exports, Arq worker)
+frontend/     Next.js app
+backend/      FastAPI app, calculators, survey pipeline, exports
+docker-compose.yml   PostGIS, Redis, MinIO
+netlify.toml         Frontend deploy
+render.yaml          Backend Blueprint
+.env.example         Environment template
 ```
 
-## API docs
+## License
 
-With the backend running, interactive docs are at http://localhost:8000/docs.
+Private / internal use — adjust as needed for your organization.

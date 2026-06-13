@@ -1,12 +1,18 @@
-# env
+# env / secrets
 .env
 .env.local
+.env.*.local
+frontend/.env.local
 
 # python
 __pycache__/
 *.pyc
 .venv/
 venv/
+backend/.pytest_cache/
+.pytest_cache/
+
+# local database / storage
 backend/dev.db
 backend/storage/
 
@@ -16,6 +22,7 @@ node_modules/
 out/
 frontend/public/cesium/
 
-# misc
+# deploy / IDE
+.netlify/
 .DS_Store
 *.log

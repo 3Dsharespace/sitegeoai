@@ -31,6 +31,7 @@ class Settings(BaseSettings):
 
     APP_SECRET: str = "dev-secret-change-me"
     AUTH_REQUIRE_JWT: bool = False
+    ENVIRONMENT: str = "development"
     NEXT_PUBLIC_APP_URL: str = "http://localhost:3000"
 
     LOCAL_STORAGE_DIR: str = str(BACKEND_DIR / "storage")

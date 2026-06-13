@@ -9,9 +9,49 @@ client = TestClient(app)
 
 
 def test_health():
-    r = client.get("/health")
+    for path in ("/health", "/api/health"):
+        r = client.get(path)
+        assert r.status_code == 200
+        assert r.json()["status"] == "ok"
+
+
+def test_system_status():
+    r = client.get("/api/system/status")
     assert r.status_code == 200
-    assert r.json()["status"] == "ok"
+    body = r.json()
+    assert "database_type" in body
+    assert "postgis_available" in body
+    assert "survey_mode_available" in body
+    assert body["ai"]["active_provider"] in ("mock", "openai", "anthropic", "gemini")
+
+
+def test_demo_project():
+    r = client.get("/api/projects/demo")
+    assert r.status_code == 200
+    body = r.json()
+    assert "Demo" in body["name"] or body["project_type"] == "flyover"
+    assert body.get("boundary_geojson") is not None
+
+
+def test_project_validation_endpoint():
+    demo = client.get("/api/projects/demo").json()
+    pid = demo["id"]
+    r = client.get(f"/api/projects/{pid}/validation")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["project_id"] == pid
+    assert isinstance(body["checks"], list)
+    assert len(body["checks"]) >= 5
+    assert "disclaimer" in body
+
+
+def test_report_pdf_does_not_crash():
+    demo = client.get("/api/projects/demo").json()
+    pid = demo["id"]
+    r = client.get(f"/api/projects/{pid}/exports/pdf")
+    assert r.status_code == 200
+    assert r.headers["content-type"] == "application/pdf"
+    assert len(r.content) > 500
 
 
 def test_auth_token():

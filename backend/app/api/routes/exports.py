@@ -39,7 +39,10 @@ def export_csv(project_id: int, db: Session = Depends(get_db), user_id: int = De
     get_owned_project(project_id, db, user_id)
     estimate = latest_estimate(db, project_id)
     if estimate is None:
-        raise HTTPException(404, "No estimate to export; generate a design first")
+        fallback = "item_name,quantity,unit,rate,amount,note\n"
+        fallback += f'"No estimate available",0,ea,0,0,"{DISCLAIMER}"\n'
+        return Response(fallback, media_type="text/csv",
+                        headers={"Content-Disposition": f"attachment; filename=boq_project_{project_id}.csv"})
     data = build_boq_csv(estimate.line_items_json or [], DISCLAIMER)
     return Response(data, media_type="text/csv",
                     headers={"Content-Disposition": f"attachment; filename=boq_project_{project_id}.csv"})
@@ -101,11 +104,18 @@ def export_geojson(project_id: int, db: Session = Depends(get_db), user_id: int 
 
 @router.get("/pdf")
 def export_pdf(project_id: int, db: Session = Depends(get_db), user_id: int = Depends(get_current_user_id)):
+    from app.services.project_validation import validate_project
+
     project = get_owned_project(project_id, db, user_id)
     scenario = _latest_scenario(db, project_id)
-    if scenario is None:
-        raise HTTPException(404, "No completed design scenario; generate a design first")
-    data = build_pdf(project, _latest_analysis(db, project_id), scenario, latest_estimate(db, project_id))
+    validation = validate_project(db, project)
+    data = build_pdf(
+        project,
+        _latest_analysis(db, project_id),
+        scenario,
+        latest_estimate(db, project_id),
+        validation=validation,
+    )
     return Response(data, media_type="application/pdf",
                     headers={"Content-Disposition": f"attachment; filename=report_project_{project_id}.pdf"})
 

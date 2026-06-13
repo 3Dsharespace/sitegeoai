@@ -83,10 +83,8 @@ export default function MapViewerArea({
     });
   }, [defaultView]);
 
-  useEffect(() => {
-    if (layers.satellite && basemap !== "satellite") setBasemap("satellite");
-    if (!layers.satellite && basemap === "satellite") setBasemap("terrain");
-  }, [layers.satellite, basemap]);
+  const activeBasemap: "satellite" | "terrain" | "street" =
+    layers.satellite ? "satellite" : basemap === "satellite" ? "terrain" : basemap;
 
   const mapCenter: [number, number] = useMemo(
     () => mapCenterOverride ?? [projectLng, projectLat],
@@ -283,7 +281,7 @@ export default function MapViewerArea({
                   { id: "terrain", label: "Terrain" },
                   { id: "street", label: "Street" },
                 ]}
-                active={basemap}
+                active={activeBasemap}
                 onChange={(id) => handleBasemap(id as typeof basemap)}
               />
             </div>
@@ -364,7 +362,7 @@ export default function MapViewerArea({
           <MapView
             center={mapCenter}
             zoom={15}
-            basemap={basemap}
+            basemap={activeBasemap}
             boundary={project.boundary_geojson}
             alignment={project.alignment_geojson}
             analysisFeatures={analysisFeatures}
@@ -379,7 +377,7 @@ export default function MapViewerArea({
         ) : (
           <CesiumView
             center={mapCenter}
-            basemap={basemap}
+            basemap={activeBasemap}
             boundary={project.boundary_geojson}
             alignment={project.alignment_geojson}
             modelUrl={modelUrl ?? null}

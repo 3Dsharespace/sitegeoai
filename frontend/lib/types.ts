@@ -80,6 +80,59 @@ export interface ValidationReport {
   };
 }
 
+export interface ProjectValidationCheck {
+  id: string;
+  label: string;
+  passed: boolean;
+  severity: "error" | "warning" | "info";
+  detail: string;
+  action: string | null;
+}
+
+export interface ProjectValidation {
+  project_id: number;
+  project_type: ProjectType;
+  accuracy_tier: AccuracyTier;
+  postgis_available: boolean;
+  survey_mode_available: boolean;
+  database_mode: "postgis" | "sqlite";
+  ready_for_design: boolean;
+  ready_for_boq: boolean;
+  ready_for_export: boolean;
+  boundary_area_sqm: number | null;
+  alignment_length_m: number | null;
+  engineering_crs_epsg: number | null;
+  checks: ProjectValidationCheck[];
+  errors: string[];
+  warnings: string[];
+  recommended_next_steps: string[];
+  disclaimer: string;
+}
+
+export interface SystemStatus {
+  database_type: string;
+  postgis_available: boolean;
+  database_mode_label: string;
+  redis_available: boolean;
+  job_store: string;
+  storage_mode: string;
+  survey_mode_available: boolean;
+  ai: {
+    active_provider: string;
+    mock_mode: boolean;
+    openai_configured: boolean;
+    anthropic_configured: boolean;
+    gemini_configured: boolean;
+  };
+  maps: {
+    google_maps_configured: boolean;
+    mapbox_configured: boolean;
+    cesium_ion_configured: boolean;
+    osm_fallback: boolean;
+  };
+  disclaimer: string;
+}
+
 export type ProjectType = "flyover" | "building" | "pipeline" | "road";
 
 export interface GeoJSONGeometry {

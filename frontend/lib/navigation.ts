@@ -51,7 +51,9 @@ export const ENGINEERING_TOOLS = [
 
 export const SETTINGS_NAV = [
   { href: "/settings", label: "Settings", icon: Settings },
+  { href: "/settings/api-keys", label: "Providers", icon: Settings },
   { href: "/admin/rates", label: "Rates", icon: Wrench },
+  { href: "/admin/templates", label: "Templates", icon: Settings },
 ];
 
 export const DEMO_PROJECT_ID = 5;

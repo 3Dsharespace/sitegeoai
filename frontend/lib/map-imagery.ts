@@ -93,8 +93,8 @@ function cesiumUrlTemplateProvider(
   });
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function createCesiumBasemapProvider(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   Cesium: any,
   basemap: MapBasemap,
   providers: TileProvidersResponse,

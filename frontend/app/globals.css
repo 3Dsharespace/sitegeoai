@@ -2,8 +2,10 @@
 
 @custom-variant dark (&:where(.dark, .dark *));
 
-html {
-  scrollbar-gutter: stable;
+@supports (scrollbar-gutter: stable) {
+  html {
+    scrollbar-gutter: stable;
+  }
 }
 
 @theme inline {
@@ -210,8 +212,8 @@ input[type="radio"] {
 .panel-glass {
   background: var(--glass-bg);
   border: 1px solid var(--glass-border);
-  backdrop-filter: blur(var(--glass-blur));
   -webkit-backdrop-filter: blur(var(--glass-blur));
+  backdrop-filter: blur(var(--glass-blur));
   box-shadow: var(--shadow-sm);
   border-radius: var(--radius-md);
 }
@@ -222,8 +224,8 @@ input[type="radio"] {
 .glass-float {
   background: var(--glass-bg);
   border: 1px solid var(--glass-border);
-  backdrop-filter: blur(var(--glass-blur));
   -webkit-backdrop-filter: blur(var(--glass-blur));
+  backdrop-filter: blur(var(--glass-blur));
   border-radius: var(--radius-md);
 }
 
@@ -334,8 +336,8 @@ input[type="radio"] {
 /* Header bar */
 .app-header {
   background: var(--header-bg);
-  backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(16px);
   border-bottom: 1px solid var(--divider);
 }
 
@@ -476,8 +478,8 @@ input[type="radio"] {
 .maplibregl-ctrl-group {
   background: var(--glass-bg) !important;
   border: 1px solid var(--glass-border) !important;
-  backdrop-filter: blur(var(--glass-blur));
   -webkit-backdrop-filter: blur(var(--glass-blur));
+  backdrop-filter: blur(var(--glass-blur));
   box-shadow: var(--shadow-sm);
   border-radius: var(--radius-sm) !important;
   overflow: hidden;
@@ -504,6 +506,7 @@ input[type="radio"] {
   background: var(--glass-bg) !important;
   color: var(--muted-foreground) !important;
   font-size: 10px !important;
+  -webkit-backdrop-filter: blur(var(--glass-blur));
   backdrop-filter: blur(var(--glass-blur));
 }
 
