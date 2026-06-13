@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: geoai-api
+    runtime: python
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: REDIS_URL
+        sync: false
+      - key: APP_SECRET
+        generateValue: true
+      - key: AUTH_REQUIRE_JWT
+        value: "false"
+      - key: NEXT_PUBLIC_APP_URL
+        value: https://geoai.netlify.app

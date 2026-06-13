@@ -1,0 +1,21 @@
+# env
+.env
+.env.local
+
+# python
+__pycache__/
+*.pyc
+.venv/
+venv/
+backend/dev.db
+backend/storage/
+
+# node
+node_modules/
+.next/
+out/
+frontend/public/cesium/
+
+# misc
+.DS_Store
+*.log

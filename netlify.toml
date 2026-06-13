@@ -1,0 +1,16 @@
+[build]
+  base = "frontend"
+  command = "npm ci && npm run build"
+  publish = ".next"
+
+[build.environment]
+  NODE_VERSION = "20"
+
+[[plugins]]
+  package = "@netlify/plugin-nextjs"
+
+[context.production.environment]
+  NEXT_PUBLIC_API_URL = "https://geoai-api.onrender.com"
+
+[context.deploy-preview.environment]
+  NEXT_PUBLIC_API_URL = "https://geoai-api.onrender.com"
