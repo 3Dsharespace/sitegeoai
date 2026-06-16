@@ -22,22 +22,11 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { useProjectData } from "@/hooks/useProjectData";
+import { MODEL_LAYER_DEFS, MODEL_LAYER_GROUPS } from "@/lib/model-layers";
 import { cn } from "@/lib/utils";
-import { type ModelLayerVisibility, useProjectStore } from "@/stores/projectStore";
+import { useProjectStore } from "@/stores/projectStore";
 
 const CesiumView = dynamic(() => import("@/components/map/CesiumView"), { ssr: false });
-
-const MODEL_LAYERS: { key: keyof ModelLayerVisibility; label: string; group: string }[] = [
-  { key: "outer", label: "Terrain", group: "Site" },
-  { key: "foundation", label: "Foundation", group: "Structure" },
-  { key: "inner", label: "Structure", group: "Structure" },
-  { key: "steel", label: "Reinforcement", group: "Structure" },
-  { key: "concrete", label: "Concrete", group: "Structure" },
-  { key: "electrical", label: "Electrical", group: "MEP" },
-  { key: "drainage", label: "Drainage", group: "MEP" },
-  { key: "pipeline", label: "Plumbing", group: "MEP" },
-  { key: "traffic", label: "Roads / Traffic", group: "Site" },
-];
 
 const VIEW_TOOLS: {
   icon: typeof Rotate3d;
@@ -65,7 +54,7 @@ export default function ModelViewerPage() {
   const center: [number, number] = [project.center_lng ?? 77.5946, project.center_lat ?? 12.9716];
   const hasModel = !!modelFile?.file_url;
 
-  const groups = [...new Set(MODEL_LAYERS.map((l) => l.group))];
+  const groups = MODEL_LAYER_GROUPS;
 
   return (
     <div className="flex-1 flex flex-col min-h-0 bg-background pb-14 md:pb-0">
@@ -85,7 +74,7 @@ export default function ModelViewerPage() {
                   {group}
                 </p>
                 <div className="space-y-0.5">
-                  {MODEL_LAYERS.filter((l) => l.group === group).map(({ key, label }) => (
+                  {MODEL_LAYER_DEFS.filter((l) => l.group === group).map(({ key, label }) => (
                     <button
                       key={key}
                       type="button"
@@ -130,7 +119,7 @@ export default function ModelViewerPage() {
           </div>
         </aside>
 
-        <div className="flex-1 relative min-w-0 rounded-lg map-viewport overflow-hidden">
+        <div className="flex-1 relative min-w-0 map-viewport overflow-hidden">
           <div className="absolute top-3 left-3 z-20 flex gap-1 panel-glass rounded-md p-1">
             {VIEW_TOOLS.map(({ icon: Icon, label, tool }) => (
               <Button

@@ -7,6 +7,7 @@ import {
   BarChart,
   CartesianGrid,
   Cell,
+  Legend,
   Pie,
   PieChart,
   ResponsiveContainer,
@@ -14,17 +15,25 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import BottomSummaryBar from "@/components/layout/BottomSummaryBar";
-import MobileBottomNav from "@/components/layout/MobileBottomNav";
+import { Download, TrendingUp } from "lucide-react";
 import { ProjectError, ProjectLoading } from "@/components/layout/ProjectHeader";
-import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import ChartCard from "@/components/project-results/ChartCard";
+import MetricCard from "@/components/project-results/MetricCard";
+import ProjectResultShell from "@/components/project-results/ProjectResultShell";
+import ResultPageHeader from "@/components/project-results/ResultPageHeader";
+import { StatusPill } from "@/components/project-results/StatusPill";
+import EmptyState from "@/components/ui/empty-state";
+import { GlassCard } from "@/components/ui/glass-card";
+import { Button } from "@/components/ui/button";
 import { Tabs } from "@/components/ui/tabs";
 import { useProjectData } from "@/hooks/useProjectData";
+import { apiUrl } from "@/lib/api";
+import { pctDiff } from "@/lib/format-display";
 import { CHART } from "@/lib/chart-theme";
 import { formatCurrency } from "@/lib/utils";
 
 const PHASES = ["all", "foundation", "structure", "road", "pipeline", "finishing"] as const;
+const CAT_COLORS = CHART.colors;
 
 export default function CostDashboardPage() {
   const params = useParams<{ id: string }>();
@@ -55,8 +64,19 @@ export default function CostDashboardPage() {
       { name: "Direct", value: c.direct_cost },
       { name: "Contingency", value: c.contingency },
       { name: "Design/Survey", value: c.design_survey_approval },
-    ];
+    ].filter((x) => x.value > 0);
   }, [calc]);
+
+  const largestDriver = useMemo(() => {
+    if (categoryData.length === 0) return null;
+    const top = [...categoryData].sort((a, b) => b.value - a.value)[0];
+    return top;
+  }, [categoryData]);
+
+  const lineSubtotal = useMemo(
+    () => filteredItems.reduce((s, i) => s + i.quantity * i.rate, 0),
+    [filteredItems],
+  );
 
   if (loading) return <ProjectLoading />;
   if (error || !project) return <ProjectError error={error || "Not found"} onRetry={load} />;
@@ -64,18 +84,35 @@ export default function CostDashboardPage() {
   const cost = calc?.cost_summary;
 
   return (
-    <div className="flex-1 flex flex-col min-h-0 pb-14 md:pb-0">
-      <div className="flex-1 overflow-y-auto p-6 space-y-6">
-        {!estimate && (
-          <Card className="border-dashed p-8 text-center">
-            <p className="text-muted-foreground">
-              Generate a design first to see cost breakdowns and charts.
-            </p>
-          </Card>
-        )}
+    <ProjectResultShell projectId={projectId} stats={summaryStats}>
+      <ResultPageHeader
+        title="Cost Analysis"
+        subtitle="Compare low, medium, and high preliminary cost estimates by category."
+        status={estimate ? "Preliminary" : "Pending design"}
+        actions={
+          estimate ? (
+            <a href={apiUrl(`/api/projects/${projectId}/exports/csv`)}>
+              <Button size="sm" variant="secondary" className="gap-1.5">
+                <Download className="h-3.5 w-3.5" />
+                Export Cost Summary
+              </Button>
+            </a>
+          ) : undefined
+        }
+      />
 
-        {estimate && (
-          <>
+      {!estimate && (
+        <GlassCard className="p-8">
+          <EmptyState
+            title="No cost data yet"
+            description="Generate a design first to see cost breakdowns and charts."
+          />
+        </GlassCard>
+      )}
+
+      {estimate && (
+        <>
+          <div className="overflow-x-auto scrollbar-none -mx-1 px-1">
             <Tabs
               tabs={PHASES.map((p) => ({
                 id: p,
@@ -83,126 +120,151 @@ export default function CostDashboardPage() {
               }))}
               active={phase}
               onChange={(id) => setPhase(id as typeof phase)}
-              className="max-w-2xl"
+              className="min-w-max"
             />
+          </div>
 
-            {cost && (
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <CostCard label="Low Estimate" value={cost.total_low} currency={cost.currency} />
-                <CostCard label="Medium Estimate" value={cost.total_medium} currency={cost.currency} highlight />
-                <CostCard label="High Estimate" value={cost.total_high} currency={cost.currency} />
-              </div>
-            )}
-
-            <div className="grid lg:grid-cols-2 gap-6">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Cost by Category</CardTitle>
-                </CardHeader>
-                <CardContent className="h-64">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={categoryData}>
-                      <CartesianGrid strokeDasharray="3 3" stroke={CHART.grid} />
-                      <XAxis dataKey="name" tick={{ fontSize: 10, fill: CHART.tick }} />
-                      <YAxis tick={{ fontSize: 10, fill: CHART.tick }} />
-                      <Tooltip contentStyle={CHART.tooltip} />
-                      <Bar dataKey="value" fill={CHART.primary} radius={[6, 6, 0, 0]} />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader>
-                  <CardTitle>Cost Composition</CardTitle>
-                </CardHeader>
-                <CardContent className="h-64">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie
-                        data={costBreakdown}
-                        dataKey="value"
-                        nameKey="name"
-                        cx="50%"
-                        cy="50%"
-                        outerRadius={80}
-                        label={({ name }) => name}
-                      >
-                        {costBreakdown.map((_, i) => (
-                          <Cell key={i} fill={CHART.colors[i % CHART.colors.length]} />
-                        ))}
-                      </Pie>
-                      <Tooltip contentStyle={CHART.tooltip} />
-                    </PieChart>
-                  </ResponsiveContainer>
-                </CardContent>
-              </Card>
+          {cost && (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <MetricCard
+                label="Low estimate"
+                value={formatCurrency(cost.total_low, cost.currency)}
+                unit={pctDiff(cost.total_low, cost.total_medium) ? `${pctDiff(cost.total_low, cost.total_medium)} vs medium` : undefined}
+              />
+              <MetricCard
+                label="Medium estimate"
+                value={formatCurrency(cost.total_medium, cost.currency)}
+                unit="Default planning estimate"
+                highlight
+              />
+              <MetricCard
+                label="High estimate"
+                value={formatCurrency(cost.total_high, cost.currency)}
+                unit={pctDiff(cost.total_medium, cost.total_high) ? `${pctDiff(cost.total_medium, cost.total_high)} vs medium` : undefined}
+              />
             </div>
+          )}
 
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  Line Items
-                  <Badge variant="warning">Preliminary</Badge>
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead className="text-xs text-muted-foreground border-b border-border">
-                    <tr>
-                      {["Item", "Category", "Qty", "Rate", "Amount"].map((h) => (
-                        <th key={h} className="text-left py-2 px-2 font-medium">
-                          {h}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredItems.map((item, i) => (
-                      <tr key={i} className="border-b border-border/50">
-                        <td className="py-2 px-2">{item.item_name}</td>
-                        <td className="py-2 px-2 text-muted-foreground text-xs">{item.category}</td>
-                        <td className="py-2 px-2">
-                          {item.quantity} {item.unit}
+          {largestDriver && (
+            <GlassCard className="flex items-center gap-3 px-4 py-3">
+              <TrendingUp className="h-4 w-4 text-[#22D3EE] shrink-0" />
+              <p className="text-sm text-[#94A3B8]">
+                Largest cost driver:{" "}
+                <span className="font-medium text-[#F8FAFC]">{largestDriver.name}</span>
+                <span className="font-data text-[#38BDF8] ml-2">
+                  {formatCurrency(largestDriver.value, cost?.currency)}
+                </span>
+              </p>
+            </GlassCard>
+          )}
+
+          <div className="grid gap-6 lg:grid-cols-2 lg:items-stretch">
+            <ChartCard title="Cost by category" subtitle="Amount in INR">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={categoryData} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke={CHART.grid} vertical={false} />
+                  <XAxis dataKey="name" tick={{ fontSize: 9, fill: CHART.tick }} axisLine={false} tickLine={false} />
+                  <YAxis
+                    tick={{ fontSize: 9, fill: CHART.tick }}
+                    axisLine={false}
+                    tickLine={false}
+                    tickFormatter={(v) => (v >= 1e7 ? `${(v / 1e7).toFixed(1)}Cr` : `${(v / 1e5).toFixed(0)}L`)}
+                  />
+                  <Tooltip contentStyle={CHART.tooltip} formatter={(v) => formatCurrency(Number(v), cost?.currency)} />
+                  <Bar dataKey="value" fill={CHART.primary} radius={[6, 6, 0, 0]} maxBarSize={40} />
+                </BarChart>
+              </ResponsiveContainer>
+            </ChartCard>
+
+            <ChartCard title="Cost composition" subtitle="Direct, contingency & approvals">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={costBreakdown}
+                    dataKey="value"
+                    nameKey="name"
+                    cx="50%"
+                    cy="45%"
+                    innerRadius={48}
+                    outerRadius={72}
+                    paddingAngle={2}
+                  >
+                    {costBreakdown.map((_, i) => (
+                      <Cell key={i} fill={CAT_COLORS[i % CAT_COLORS.length]} />
+                    ))}
+                  </Pie>
+                  <Tooltip contentStyle={CHART.tooltip} formatter={(v) => formatCurrency(Number(v), cost?.currency)} />
+                  <Legend
+                    wrapperStyle={{ fontSize: 11, color: CHART.tick }}
+                    formatter={(value, entry) => {
+                      const val = (entry.payload as { value: number })?.value;
+                      const total = costBreakdown.reduce((s, x) => s + x.value, 0);
+                      const pct = total ? Math.round((val / total) * 100) : 0;
+                      return `${value} (${pct}%)`;
+                    }}
+                  />
+                </PieChart>
+              </ResponsiveContainer>
+            </ChartCard>
+          </div>
+
+          <GlassCard className="overflow-hidden">
+            <div className="border-b border-[rgba(148,163,184,0.1)] px-4 py-3 flex items-center gap-2">
+              <h3 className="text-sm font-semibold text-[#F8FAFC]">Line items</h3>
+              <StatusPill label="Preliminary" variant="warning" />
+            </div>
+            <div className="overflow-x-auto">
+              <table className="data-table w-full min-w-[640px]">
+                <thead>
+                  <tr>
+                    {["Item", "Category", "Qty", "Rate", "Amount"].map((h, i) => (
+                      <th key={h} className={i >= 2 ? "text-right" : undefined}>
+                        {h}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredItems.map((item, i) => {
+                    const catIdx = categoryData.findIndex((c) => c.name === item.category);
+                    return (
+                      <tr key={i}>
+                        <td>
+                          <span className="inline-flex items-center gap-2">
+                            <span
+                              className="h-2 w-2 rounded-full shrink-0"
+                              style={{ background: CAT_COLORS[catIdx >= 0 ? catIdx % CAT_COLORS.length : 0] }}
+                            />
+                            {item.item_name}
+                          </span>
                         </td>
-                        <td className="py-2 px-2">{item.rate.toLocaleString()}</td>
-                        <td className="py-2 px-2 font-medium">
-                          {(item.quantity * item.rate).toLocaleString()}
+                        <td className="text-xs text-[#94A3B8]">{item.category}</td>
+                        <td className="text-right font-data text-xs">
+                          {item.quantity.toLocaleString("en-IN")} {item.unit}
+                        </td>
+                        <td className="text-right font-data text-xs">{item.rate.toLocaleString("en-IN")}</td>
+                        <td className="text-right font-medium font-data">
+                          {(item.quantity * item.rate).toLocaleString("en-IN")}
                         </td>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </CardContent>
-            </Card>
-          </>
-        )}
-      </div>
-
-      <MobileBottomNav projectId={projectId} />
-
-      <BottomSummaryBar stats={summaryStats} />
-    </div>
-  );
-}
-
-function CostCard({
-  label,
-  value,
-  currency,
-  highlight,
-}: {
-  label: string;
-  value: number;
-  currency: string;
-  highlight?: boolean;
-}) {
-  return (
-    <Card className={highlight ? "border-primary bg-primary/5" : ""}>
-      <CardContent className="p-4">
-        <p className="text-xs text-muted-foreground mb-1">{label}</p>
-        <p className="text-xl font-bold">{formatCurrency(value, currency)}</p>
-      </CardContent>
-    </Card>
+                    );
+                  })}
+                </tbody>
+                <tfoot className="border-t border-[rgba(148,163,184,0.15)] bg-[rgba(13,17,23,0.95)]">
+                  <tr className="font-semibold text-[#F8FAFC]">
+                    <td colSpan={4} className="text-right py-2.5">
+                      Subtotal
+                    </td>
+                    <td className="text-right py-2.5 font-data text-[#38BDF8]">
+                      {lineSubtotal.toLocaleString("en-IN")}
+                    </td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </GlassCard>
+        </>
+      )}
+    </ProjectResultShell>
   );
 }

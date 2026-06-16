@@ -6,9 +6,9 @@ import Toaster from "@/components/ui/toaster";
 import { inter, jetbrainsMono } from "@/lib/fonts";
 
 export const metadata: Metadata = {
-  title: "Infrastructure Planning Portal",
+  title: "GeoAI Infrastructure Studio",
   description:
-    "Official preliminary infrastructure planning system. GIS site selection, design estimation, and reporting — not for construction approval.",
+    "AI-powered 3D infrastructure planning — GIS site selection, terrain analysis, design estimation, and reporting.",
 };
 
 export default function RootLayout({

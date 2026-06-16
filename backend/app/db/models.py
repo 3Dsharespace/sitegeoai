@@ -28,6 +28,9 @@ class User(Base):
     id = Column(Integer, primary_key=True)
     name = Column(String(255), nullable=False)
     email = Column(String(255), unique=True, nullable=False)
+    password_hash = Column(String(255), nullable=True)
+    role = Column(String(20), default="user", nullable=False, index=True)
+    plan = Column(String(20), default="free", nullable=False, index=True)
     created_at = Column(DateTime(timezone=True), default=utcnow)
 
 
@@ -254,3 +257,30 @@ class AccuracyReport(Base):
     created_at = Column(DateTime(timezone=True), default=utcnow)
 
     project = relationship("Project", back_populates="accuracy_reports")
+
+
+class UsageEvent(Base):
+    __tablename__ = "usage_events"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    project_id = Column(Integer, ForeignKey("projects.id"), nullable=True, index=True)
+    event_type = Column(String(64), nullable=False, index=True)
+    units = Column(Integer, default=1, nullable=False)
+    metadata_json = Column(JSON, nullable=True)
+    created_at = Column(DateTime(timezone=True), default=utcnow, index=True)
+
+
+class AuditLog(Base):
+    __tablename__ = "audit_logs"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    action = Column(String(100), nullable=False, index=True)
+    entity_type = Column(String(100), nullable=True, index=True)
+    entity_id = Column(String(100), nullable=True)
+    project_id = Column(Integer, ForeignKey("projects.id"), nullable=True, index=True)
+    metadata_json = Column(JSON, nullable=True)
+    ip_address = Column(String(64), nullable=True)
+    user_agent = Column(String(512), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=utcnow, index=True)

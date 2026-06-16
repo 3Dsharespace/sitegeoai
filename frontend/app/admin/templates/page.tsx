@@ -6,9 +6,11 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { api } from "@/lib/api";
 import { toastPromise } from "@/lib/toast";
+import { useAuthUser } from "@/lib/useAuthUser";
 import type { ProjectTemplate } from "@/lib/types";
 
 export default function TemplatesPage() {
+  const { isAdmin, loading: authLoading } = useAuthUser();
   const [templates, setTemplates] = useState<ProjectTemplate[]>([]);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [draftJson, setDraftJson] = useState("");
@@ -57,8 +59,12 @@ export default function TemplatesPage() {
           <h1 className="text-2xl font-bold tracking-tight">Project Templates</h1>
           <p className="text-sm text-muted-foreground mt-1">
             Default parameters applied when creating a new design for each project type.
+            {!isAdmin && !authLoading ? " Read-only view." : ""}
           </p>
         </div>
+        {!authLoading && !isAdmin && (
+          <p className="text-xs text-amber-600/90">Admin access is required to edit templates.</p>
+        )}
         {error && <p className="text-sm text-destructive">{error}</p>}
 
         <div className="grid gap-3">
@@ -67,6 +73,7 @@ export default function TemplatesPage() {
               <CardHeader className="flex-row items-center gap-2 space-y-0 pb-2">
                 <Badge variant="accent">{t.project_type}</Badge>
                 <CardTitle className="text-sm flex-1">{t.name}</CardTitle>
+                {isAdmin && (
                 <Button
                   size="sm"
                   variant="secondary"
@@ -75,6 +82,7 @@ export default function TemplatesPage() {
                 >
                   {editingId === t.id ? "Save" : "Edit JSON"}
                 </Button>
+                )}
               </CardHeader>
               <CardContent>
                 {editingId === t.id ? (

@@ -9,12 +9,12 @@ from shapely.ops import unary_union
 from sqlalchemy.orm import Session
 
 from app.core.disclaimer import DISCLAIMER
+from app.core.project_catalog import ALIGNMENT_TYPES
 from app.db.models import DesignScenario, GroundControlPoint, Project, QuantityEstimate, SurveyDataset
 from app.db.session import IS_POSTGRES
 from app.services.geospatial.crs import estimate_utm_epsg
 from app.services.geospatial.spatial_analysis import line_length_m, polygon_metrics
 
-ALIGNMENT_TYPES = {"flyover", "pipeline", "road"}
 Severity = Literal["error", "warning", "info"]
 
 

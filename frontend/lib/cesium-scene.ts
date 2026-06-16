@@ -1,6 +1,7 @@
 import { haversineM, lineLengthM, polygonAreaSqm } from "@/lib/geo";
 import { corridorFromLine } from "@/lib/map-draw";
 import type { GeoJSONFeature, GeoJSONGeometry } from "@/lib/types";
+import type { TerrainProvider } from "cesium";
 
 export interface Scene3DObjectInfo {
   id: string;
@@ -18,7 +19,6 @@ export interface Scene3DObjectInfo {
 
 export type Scene3DLayerKey =
   | "terrain"
-  | "mountains"
   | "roads"
   | "buildings"
   | "flyover"
@@ -33,7 +33,6 @@ export type Scene3DLayerKey =
 
 export const SCENE3D_LAYER_LABELS: Record<Scene3DLayerKey, string> = {
   terrain: "Terrain",
-  mountains: "Mountains / slopes",
   roads: "Roads (3D)",
   buildings: "Buildings",
   flyover: "Flyover / deck",
@@ -50,9 +49,8 @@ export const SCENE3D_LAYER_LABELS: Record<Scene3DLayerKey, string> = {
 export function defaultScene3DLayers(): Record<Scene3DLayerKey, boolean> {
   return {
     terrain: true,
-    mountains: true,
     roads: true,
-    buildings: true,
+    buildings: false,
     flyover: true,
     bridge: true,
     pipeline: true,
@@ -120,7 +118,6 @@ export function objectInfoFromFeature(
     water: "Water surface",
     trees: "Vegetation",
     flyover: "Pre-stressed concrete deck",
-    mountains: "Rock / soil",
     terrain: "Mixed terrain",
   };
 
@@ -165,14 +162,157 @@ export function slopePercent(riseM: number, runM: number): number {
   return (riseM / runM) * 100;
 }
 
-/** OpenTopoMap — height-map style imagery (contours + relief). */
-export const TOPO_IMAGERY_URL = "https://tile.opentopomap.org/{z}/{x}/{y}.png";
-
 export const ARCGIS_ELEVATION_URL =
   "https://elevation3d.arcgis.com/arcgis/rest/services/WorldElevation3D/Terrain3D/ImageServer";
 
-/** Default vertical exaggeration for readable 3D height-map terrain. */
-export const DEFAULT_TERRAIN_EXAGGERATION = 1.5;
+type CesiumNamespace = typeof import("cesium");
+type CesiumViewerLike = {
+  scene?: {
+    globe?: {
+      terrainProvider?: TerrainProvider;
+    };
+  };
+};
+
+/**
+ * Fixed ENU model matrix for Y-up design GLBs (engineering Z-up baked at export).
+ */
+export function buildDesignModelMatrix(
+  Cesium: CesiumNamespace,
+  lng: number,
+  lat: number,
+  bearingRad: number,
+  heightM: number,
+) {
+  const position = Cesium.Cartesian3.fromDegrees(lng, lat, heightM);
+  const hpr = new Cesium.HeadingPitchRoll(
+    Cesium.Math.PI_OVER_TWO - bearingRad,
+    0,
+    0,
+  );
+  return Cesium.Transforms.headingPitchRollToFixedFrame(
+    position,
+    hpr,
+    Cesium.Ellipsoid.WGS84,
+    Cesium.Transforms.localFrameToFixedFrameGenerator("east", "north"),
+    new Cesium.Matrix4(),
+  );
+}
+
+/** Sample ellipsoid terrain height (meters) at a lng/lat; returns 0 on flat globe. */
+export async function sampleTerrainHeightM(
+  Cesium: CesiumNamespace,
+  terrainProvider: TerrainProvider | null | undefined,
+  lng: number,
+  lat: number,
+): Promise<number> {
+  if (!terrainProvider || terrainProvider instanceof Cesium.EllipsoidTerrainProvider) {
+    return 0;
+  }
+  try {
+    const [sample] = await Cesium.sampleTerrainMostDetailed(terrainProvider, [
+      Cesium.Cartographic.fromDegrees(lng, lat),
+    ]);
+    return sample?.height ?? 0;
+  } catch {
+    return 0;
+  }
+}
+
+/** Ground height for design GLB models — samples real terrain elevation. */
+export async function designModelGroundHeightM(
+  Cesium: CesiumNamespace,
+  viewer: CesiumViewerLike,
+  lng: number,
+  lat: number,
+): Promise<number> {
+  const provider = viewer.scene?.globe?.terrainProvider;
+  const raw = await sampleTerrainHeightM(Cesium, provider, lng, lat);
+  if (!provider || provider instanceof Cesium.EllipsoidTerrainProvider) return 0;
+  return raw;
+}
+
+/** Flat globe — no elevation mesh. */
+export function createFlatTerrain(Cesium: CesiumNamespace) {
+  return new Cesium.Terrain(Promise.resolve(new Cesium.EllipsoidTerrainProvider()));
+}
+
+const IS_DEV = process.env.NODE_ENV === "development";
+
+/** Safe dev-only logging for Cesium layer / tile lifecycle. */
+export function cesiumDevLog(
+  category: "buildings" | "osm" | "tiles-ion" | "tiles-google" | "transparent" | "basemap" | "terrain",
+  message: string,
+  detail?: unknown,
+) {
+  if (!IS_DEV) return;
+  if (detail !== undefined) {
+    console.info(`[cesium:${category}] ${message}`, detail);
+  } else {
+    console.info(`[cesium:${category}] ${message}`);
+  }
+}
+
+/** Context building extrusion fill (OSM footprints). */
+export const CONTEXT_BUILDING_FILL = "rgba(110, 125, 145, 0.25)";
+export const CONTEXT_BUILDING_OUTLINE = "rgba(110, 125, 145, 0.45)";
+
+/** Ion OSM 3D buildings asset — neutral tint so tiles are not bright white blocks. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function applyIonOsmBuildingTileStyle(Cesium: any, tileset: any) {
+  tileset.style = new Cesium.Cesium3DTileStyle({
+    color: "color('#6E7D91', 0.35)",
+  });
+}
+
+/** Reset globe translucency when transparent / underground mode is off. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function resetGlobeTranslucency(viewer: any, Cesium: any) {
+  const globe = viewer?.scene?.globe;
+  if (!globe?.translucency) return;
+  globe.translucency.enabled = false;
+  globe.translucency.frontFaceAlpha = 1;
+  globe.translucency.backFaceAlpha = 1;
+}
+
+/** Restore full-opacity imagery after transparent mode. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function resetImageryAlpha(viewer: any) {
+  const layers = viewer?.imageryLayers;
+  if (!layers) return;
+  for (let i = 0; i < layers.length; i++) {
+    layers.get(i).alpha = 1;
+  }
+}
+
+/** Enable underground / survey translucency (Transparent mode only). */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function applyGlobeTranslucency(viewer: any, Cesium: any) {
+  const globe = viewer.scene.globe;
+  globe.translucency.enabled = true;
+  globe.translucency.frontFaceAlpha = 1;
+  globe.translucency.backFaceAlpha = 1;
+  globe.translucency.frontFaceAlphaByDistance = new Cesium.NearFarScalar(400, 0.35, 8000, 0.95);
+}
+
+/** Remove every Cesium3DTileset from the scene (Ion / Google photorealistic city meshes). */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function purgeVendorTilesetsFromScene(viewer: any, Cesium: any) {
+  const collection = viewer?.scene?.primitives;
+  if (!collection) return;
+  for (let i = collection.length - 1; i >= 0; i--) {
+    const primitive = collection.get(i);
+    if (!(primitive instanceof Cesium.Cesium3DTileset)) continue;
+    try {
+      primitive.show = false;
+      collection.remove(primitive);
+      if (!primitive.isDestroyed?.()) primitive.destroy();
+    } catch {
+      /* viewer shutting down */
+    }
+  }
+  viewer.scene.requestRender?.();
+}
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function createElevationTerrain(Cesium: any, ionToken?: string) {
@@ -183,13 +323,4 @@ export function createElevationTerrain(Cesium: any, ionToken?: string) {
     ARCGIS_ELEVATION_URL,
   ).catch(() => new Cesium.EllipsoidTerrainProvider());
   return new Cesium.Terrain(providerPromise);
-}
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function createTopoImageryProvider(Cesium: any) {
-  return new Cesium.UrlTemplateImageryProvider({
-    url: TOPO_IMAGERY_URL,
-    credit: "© OpenTopoMap contributors",
-    maximumLevel: 17,
-  });
 }

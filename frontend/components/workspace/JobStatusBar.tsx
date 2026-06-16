@@ -44,24 +44,33 @@ export default function JobStatusBar({
 
   const running = activeJob.status === "running" || activeJob.status === "queued";
 
+  const statusLabel: Record<string, string> = {
+    queued: "Queued — analyzing site",
+    running: "Generating layout & estimating materials",
+    completed: "Completed",
+    failed: "Failed",
+  };
+
   return (
     <div
       className={cn(
-        "flex items-center gap-2 text-[11px] border-t border-border bg-background-secondary",
+        "flex items-center gap-2 text-[11px] border-t border-[rgba(148,163,184,0.12)] bg-[rgba(13,17,23,0.95)]",
         compact ? "px-3 py-2 flex-wrap" : "h-10 px-5 gap-3 text-[12px]",
       )}
     >
       {running ? (
-        <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
+        <Loader2 className="h-3.5 w-3.5 animate-spin text-[#3B82F6]" />
       ) : (
         <span
           className={cn(
-            "w-2 h-2 rounded-full",
-            activeJob.status === "completed" ? "bg-success" : "bg-accent",
+            "w-2 h-2 rounded-full shrink-0",
+            activeJob.status === "completed" ? "bg-[#10B981]" : activeJob.status === "failed" ? "bg-[#EF4444]" : "bg-[#22D3EE]",
           )}
         />
       )}
-      <span className="font-medium">Design generation: {activeJob.status}</span>
+      <span className="font-medium text-[#F8FAFC]">
+        {statusLabel[activeJob.status] ?? activeJob.status}
+      </span>
       {activeJob.error && <span className="text-destructive truncate">— {activeJob.error}</span>}
       {activeJob.status === "completed" && (
         <span className="text-success">Model, quantities, and cost estimate are ready.</span>

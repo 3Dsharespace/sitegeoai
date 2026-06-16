@@ -21,7 +21,7 @@ import {
   verticesToLine,
   verticesToPolygon,
 } from "@/lib/map-draw";
-import type { GeoJSONFeature, GeoJSONGeometry } from "@/lib/types";
+import type { GeoJSONFeature, GeoJSONGeometry, ProjectType } from "@/lib/types";
 import { generateSiteSuggestions } from "@/lib/site-suggestions";
 import { MAP_COLORS } from "@/lib/map-colors";
 import DrawHud from "@/components/map/DrawHud";
@@ -54,11 +54,12 @@ interface MapViewProps {
   onAlignmentDrawn?: (g: GeoJSONGeometry) => void;
   onMapClick?: (lng: number, lat: number) => void;
   onSuggestionApplied?: (kind: "boundary" | "alignment", geometry: GeoJSONGeometry) => void;
-  projectType?: "flyover" | "building" | "pipeline" | "road";
+  projectType?: ProjectType;
   roadFeatures?: GeoJSONFeature[];
   buildingFeatures?: GeoJSONFeature[];
   hideFloatingTools?: boolean;
   basemap?: MapBasemap;
+  showCenterMarker?: boolean;
 }
 
 function pxToMeters(map: MlMap, px: number, lngLat: [number, number]): number {
@@ -82,7 +83,8 @@ export default function MapView({
   roadFeatures,
   buildingFeatures,
   hideFloatingTools = false,
-  basemap = "terrain",
+  basemap = "satellite",
+  showCenterMarker = false,
 }: MapViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MlMap | null>(null);
@@ -427,7 +429,7 @@ export default function MapView({
         id: "analysis-buildings",
         type: "fill",
         source: "analysis",
-        paint: { "fill-color": MAP_COLORS.structure, "fill-opacity": 0.4 },
+        paint: { "fill-color": "#6E7D91", "fill-opacity": 0.25 },
         filter: ["==", ["get", "category"], "building"],
       });
       map.addLayer({
@@ -814,8 +816,17 @@ export default function MapView({
   );
 
   return (
-    <div className="relative w-full h-full">
-      <div ref={containerRef} style={{ position: "absolute", inset: 0 }} />
+    <div className="relative w-full h-full bg-[#05070A]">
+      <div ref={containerRef} className="absolute inset-0 maplibre-canvas-host" />
+      {showCenterMarker && (
+        <div className="pointer-events-none absolute inset-0 z-[5] flex items-center justify-center">
+          <div className="relative h-8 w-8">
+            <div className="absolute inset-0 rounded-full border-2 border-[#22D3EE]/60 shadow-[0_0_16px_rgba(34,211,238,0.5)]" />
+            <div className="absolute left-1/2 top-0 h-full w-px -translate-x-1/2 bg-[#22D3EE]/70" />
+            <div className="absolute left-0 top-1/2 h-px w-full -translate-y-1/2 bg-[#22D3EE]/70" />
+          </div>
+        </div>
+      )}
       {!hideFloatingTools && (
         <div className="absolute top-2 left-2 z-10 flex flex-col gap-1 panel p-1">
           {FLOATING_TOOLS.map((t) => (

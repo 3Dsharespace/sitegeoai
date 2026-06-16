@@ -13,7 +13,6 @@ const TOGGLES: {
   { key: "surveyOrtho", label: "Survey ortho", short: "Ortho" },
   { key: "surveyDem", label: "DEM terrain mesh", short: "DEM" },
   { key: "surveyVectors", label: "Engineering vectors", short: "Vectors" },
-  { key: "surveyAlpha", label: "Alpha preview", short: "Alpha" },
   { key: "surveyGcp", label: "GCP points", short: "GCPs" },
 ];
 

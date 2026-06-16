@@ -11,6 +11,9 @@
 
 [context.production.environment]
   NEXT_PUBLIC_API_URL = "https://geoai-api.onrender.com"
+  NEXT_PUBLIC_AUTH_REQUIRE_JWT = "true"
+  NEXT_PUBLIC_MAP_ENGINE = "maplibre"
 
 [context.deploy-preview.environment]
   NEXT_PUBLIC_API_URL = "https://geoai-api.onrender.com"
+  NEXT_PUBLIC_AUTH_REQUIRE_JWT = "true"

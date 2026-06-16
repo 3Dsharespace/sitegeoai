@@ -77,6 +77,11 @@ export function basemapMaxZoom(basemap: MapBasemap, satelliteMaxZoom = 22): numb
   return MAP_VIEW_MAX_ZOOM;
 }
 
+/** 3D globe never uses topographic imagery — satellite (or streets) only. */
+export function basemapFor3d(basemap: MapBasemap): MapBasemap {
+  return basemap === "street" ? "street" : "satellite";
+}
+
 function cesiumUrlTemplateProvider(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   Cesium: any,
@@ -99,18 +104,19 @@ export async function createCesiumBasemapProvider(
   basemap: MapBasemap,
   providers: TileProvidersResponse,
 ) {
-  if (basemap === "satellite") {
+  const mode = basemapFor3d(basemap);
+  if (mode === "satellite") {
     const config = providers.satellite_config;
     return cesiumUrlTemplateProvider(Cesium, config, config.provider === "mapbox");
   }
-  if (basemap === "street") {
+  if (mode === "street") {
     return new Cesium.UrlTemplateImageryProvider({
       url: "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
       credit: "© OpenStreetMap contributors",
       maximumLevel: 19,
     });
   }
-  return cesiumUrlTemplateProvider(Cesium, providers.terrain_config);
+  return cesiumUrlTemplateProvider(Cesium, providers.satellite_config);
 }
 
 export function buildOsmStyle(
@@ -135,6 +141,7 @@ export function buildOsmStyle(
         id: "osm",
         type: "raster",
         source: "osm",
+        layout: { visibility: "none" },
         paint: { "raster-resampling": "linear" },
       },
       {

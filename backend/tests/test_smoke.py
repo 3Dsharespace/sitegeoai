@@ -22,7 +22,10 @@ def test_system_status():
     assert "database_type" in body
     assert "postgis_available" in body
     assert "survey_mode_available" in body
-    assert body["ai"]["active_provider"] in ("mock", "openai", "anthropic", "gemini")
+    assert "production" in body
+    assert "production_ready" in body["production"]
+    assert body["ai"]["active_provider"] in ("mock", "openai", "anthropic", "gemini", "ollama")
+    assert "ollama" in body["ai"]
 
 
 def test_demo_project():
@@ -106,6 +109,7 @@ def test_ai_chat_stream():
     sr = client.post(f"/api/projects/{pid}/ai/chat/stream", json={"message": "4 lanes"})
     assert sr.status_code == 200
     assert "data:" in sr.text
+    assert '"actions"' in sr.text
     client.delete(f"/api/projects/{pid}")
 
 

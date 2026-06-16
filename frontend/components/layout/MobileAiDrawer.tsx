@@ -12,6 +12,7 @@ interface Props {
   design?: DesignOutput | null;
   onApplyParameters: (params: Record<string, unknown>) => void;
   onRegenerate: (params: Record<string, unknown>) => void;
+  onRunSiteAnalysis?: () => Promise<void>;
 }
 
 export default function MobileAiDrawer({
@@ -19,6 +20,7 @@ export default function MobileAiDrawer({
   design,
   onApplyParameters,
   onRegenerate,
+  onRunSiteAnalysis,
 }: Props) {
   const [open, setOpen] = useState(false);
 
@@ -68,6 +70,7 @@ export default function MobileAiDrawer({
                   design={design}
                   onApplyParameters={onApplyParameters}
                   onRegenerate={onRegenerate}
+                  onRunSiteAnalysis={onRunSiteAnalysis}
                 />
               </div>
             </motion.div>

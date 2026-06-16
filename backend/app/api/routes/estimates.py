@@ -60,7 +60,7 @@ def get_estimate(
     else:
         estimate = latest_estimate(db, project_id)
     if estimate is None:
-        raise HTTPException(404, "No estimate yet; generate a design first")
+        return None
     return estimate_out(estimate)
 
 

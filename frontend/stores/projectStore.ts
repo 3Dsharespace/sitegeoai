@@ -1,8 +1,9 @@
 import { create } from "zustand";
 
-import type { AccuracyTier, GeoJSONFeature, GeoJSONGeometry, JobStatus, Project } from "@/lib/types";
+import type { AccuracyTier, GeoJSONFeature, GeoJSONGeometry, GeometrySpec, JobStatus, Project } from "@/lib/types";
 
 import type { SiteSuggestion } from "@/lib/site-suggestions";
+import { extractDesignMeshLayers } from "@/lib/design-mesh-layers";
 import type { Scene3DObjectInfo, Scene3DLayerKey } from "@/lib/cesium-scene";
 import { defaultScene3DLayers } from "@/lib/cesium-scene";
 import { defaultCorridorWidth, geometryToVertices, type ToolHint } from "@/lib/map-draw";
@@ -52,7 +53,6 @@ export interface SurveyLayerVisibility {
   surveyOrtho: boolean;
   surveyDem: boolean;
   surveyVectors: boolean;
-  surveyAlpha: boolean;
   surveyGcp: boolean;
 }
 
@@ -213,6 +213,10 @@ interface ProjectState {
   setEngineeringLayerFeatures: (f: GeoJSONFeature[]) => void;
   surveyGcpFeatures: GeoJSONFeature[];
   setSurveyGcpFeatures: (f: GeoJSONFeature[]) => void;
+  designMeshCatalog: { layer: string; name: string }[];
+  designMeshVisibility: Record<string, boolean>;
+  syncDesignMeshFromSpec: (spec: GeometrySpec | null | undefined) => void;
+  toggleDesignMeshLayer: (layerId: string) => void;
 }
 
 export const useProjectStore = create<ProjectState>((set) => ({
@@ -281,7 +285,7 @@ export const useProjectStore = create<ProjectState>((set) => ({
   layers: {
     satellite: false,
     roads: true,
-    buildings: true,
+    buildings: false,
     terrain: true,
     tiles3d: false,
     projectModel: true,
@@ -376,7 +380,6 @@ export const useProjectStore = create<ProjectState>((set) => ({
     surveyOrtho: true,
     surveyDem: true,
     surveyVectors: true,
-    surveyAlpha: false,
     surveyGcp: true,
   },
   toggleSurveyLayer: (key) =>
@@ -385,4 +388,29 @@ export const useProjectStore = create<ProjectState>((set) => ({
   setEngineeringLayerFeatures: (engineeringLayerFeatures) => set({ engineeringLayerFeatures }),
   surveyGcpFeatures: [],
   setSurveyGcpFeatures: (surveyGcpFeatures) => set({ surveyGcpFeatures }),
+  designMeshCatalog: [],
+  designMeshVisibility: {},
+  syncDesignMeshFromSpec: (spec) =>
+    set((s) => {
+      if (!spec?.objects?.length) {
+        return { designMeshCatalog: [], designMeshVisibility: {} };
+      }
+      const groups = extractDesignMeshLayers(spec);
+      const catalog = spec.objects.map((o) => ({
+        layer: o.layer || "misc",
+        name: o.name,
+      }));
+      const visibility: Record<string, boolean> = {};
+      for (const group of groups) {
+        visibility[group.id] = s.designMeshVisibility[group.id] ?? true;
+      }
+      return { designMeshCatalog: catalog, designMeshVisibility: visibility };
+    }),
+  toggleDesignMeshLayer: (layerId) =>
+    set((s) => ({
+      designMeshVisibility: {
+        ...s.designMeshVisibility,
+        [layerId]: !s.designMeshVisibility[layerId],
+      },
+    })),
 }));

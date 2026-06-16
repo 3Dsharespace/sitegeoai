@@ -4,7 +4,7 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useEffect } from "react";
 import BottomSummaryBar from "@/components/layout/BottomSummaryBar";
 import DrawingToolsPanel from "@/components/layout/DrawingToolsPanel";
-import { CollapsibleSection } from "@/components/ui/collapsible-section";
+import DrawingToolsToolbar from "@/components/layout/DrawingToolsToolbar";
 import ProjectValidationPanel from "@/components/project/ProjectValidationPanel";
 import SiteSuggestionsPanel from "@/components/map/SiteSuggestionsPanel";
 import MobileAiDrawer from "@/components/layout/MobileAiDrawer";
@@ -66,19 +66,25 @@ export default function MapSelectionPageInner() {
   if (loading) return <ProjectLoading message="Loading map…" />;
   if (error || !project) return <ProjectError error={error || "Not found"} onRetry={load} />;
 
+  const drawingToolProps = {
+    projectId,
+    projectType: project.project_type,
+    boundary: project.boundary_geojson,
+    alignment: project.alignment_geojson,
+    onImportBoundary: async (g: GeoJSONGeometry) => saveBoundary(g),
+    onImportAlignment: async (g: GeoJSONGeometry) => saveAlignment(g),
+    onSaveBoundary: saveBoundary,
+    onSaveAlignment: saveAlignment,
+  };
+
   const leftPanel = (
     <WorkspaceLeftSidebar
       tools={
-        <DrawingToolsPanel
-          onImportBoundary={async (g) => saveBoundary(g)}
-          onImportAlignment={async (g) => saveAlignment(g)}
-        />
+        <DrawingToolsPanel hidePrimaryTools {...drawingToolProps} />
       }
       middle={
         <div className="space-y-3">
-          <CollapsibleSection title="Readiness" defaultOpen={false}>
-            <ProjectValidationPanel projectId={projectId} compact />
-          </CollapsibleSection>
+          <ProjectValidationPanel projectId={projectId} compact />
           <SiteSuggestionsPanel
           sidebar
           projectId={projectId}
@@ -97,6 +103,15 @@ export default function MapSelectionPageInner() {
     <div className={cn("flex flex-1 flex-col min-h-0 overflow-hidden", !workspaceFullscreen && "pb-14 md:pb-0")}>
       <WorkspaceLayout
         projectId={projectId}
+        toolbar={
+          <DrawingToolsToolbar
+            projectType={project.project_type}
+            boundary={project.boundary_geojson}
+            alignment={project.alignment_geojson}
+            onSaveBoundary={saveBoundary}
+            onSaveAlignment={saveAlignment}
+          />
+        }
         ai={{
           projectId,
           design,

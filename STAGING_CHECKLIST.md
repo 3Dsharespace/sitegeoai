@@ -1,0 +1,143 @@
+# Staging Launch Checklist — GeoAI 3D Construction Planner
+
+Use this checklist before promoting a staging or production release.
+
+## Backend deploy
+
+- [ ] Render Blueprint applied (`render.yaml`) or equivalent services created
+- [ ] `geoai-api` web service healthy at `/health`
+- [ ] `geoai-worker` running (`arq app.workers.tasks.WorkerSettings`)
+- [ ] Build completed `alembic upgrade head` without errors
+- [ ] Startup logs show `deployment_ready` (check Render logs)
+- [ ] `GET /api/system/status` returns expected database/redis/storage flags
+
+## Frontend deploy
+
+- [ ] Netlify build succeeded (`npm ci && npm run build`)
+- [ ] `NEXT_PUBLIC_API_URL` points to staging/production API
+- [ ] `NEXT_PUBLIC_AUTH_REQUIRE_JWT=true` in production context
+- [ ] App loads dashboard without console errors
+
+## Environment variables
+
+### Backend (API + worker)
+
+- [ ] `DATABASE_URL` (Postgres)
+- [ ] `REDIS_URL`
+- [ ] `APP_SECRET` (not dev default)
+- [ ] `ENVIRONMENT=production`
+- [ ] `AUTH_REQUIRE_JWT=true`
+- [ ] `USE_ARQ_WORKER=true`
+- [ ] `NEXT_PUBLIC_APP_URL` = frontend URL (CORS)
+- [ ] `S3_*` configured for durable files
+- [ ] Optional: `SENTRY_DSN`, AI keys, map tokens
+
+### Frontend (Netlify)
+
+- [ ] `NEXT_PUBLIC_API_URL`
+- [ ] `NEXT_PUBLIC_AUTH_REQUIRE_JWT=true`
+- [ ] Optional: `NEXT_PUBLIC_SENTRY_DSN`, map tokens
+
+## Infrastructure checks
+
+### PostGIS
+
+```sql
+CREATE EXTENSION IF NOT EXISTS postgis;
+```
+
+- [ ] `/api/system/status` → `postgis_available: true`
+
+### Redis + worker
+
+- [ ] `/api/system/status` → `redis_available: true`, `job_store: redis`
+- [ ] `production.use_arq_worker: true`
+- [ ] Worker logs show Arq startup without Redis errors
+
+### S3 / object storage
+
+- [ ] `/api/system/status` → `storage_mode: s3` (not `local` in production)
+- [ ] No critical `local_storage` warning in `production.warnings`
+
+## Auth
+
+- [ ] Register new user works
+- [ ] Login returns JWT
+- [ ] `/api/auth/me` returns user + plan
+- [ ] Unauthenticated project access returns 401 when JWT required
+- [ ] First admin promoted: `python backend/scripts/create_admin.py you@company.com`
+
+## Maps
+
+- [ ] Map loads (OSM fallback minimum)
+- [ ] Optional: satellite/3D tiles with Mapbox/Cesium/Google keys
+- [ ] Browser keys restricted by domain in provider dashboard
+
+## Core workflow tests
+
+### Generation
+
+- [ ] Create project with boundary
+- [ ] Run `fast_preview` generation
+- [ ] Job reaches preview/completed
+- [ ] Job response includes `diagnostics` timings
+
+### GLB visibility
+
+- [ ] Preview/final GLB URL returns 200 when authenticated
+- [ ] 3D model visible in workspace/model page
+
+### PDF report
+
+- [ ] Open report page
+- [ ] Download PDF export
+
+### Usage limits
+
+- [ ] Settings usage card loads `/api/usage/summary`
+- [ ] Free plan limits enforced (429 with `usage_limit_exceeded`) when exceeded
+
+### Admin audit
+
+- [ ] Admin can open audit logs (`GET /api/admin/audit`)
+- [ ] Admin usage query works (`GET /api/admin/usage`)
+
+## Observability
+
+- [ ] API responses include `X-Request-ID` header
+- [ ] Error JSON includes `request_id` for support/debugging
+- [ ] Optional: `SENTRY_DSN` set and errors appear in Sentry
+
+## Automated smoke test
+
+```bash
+cd backend
+python scripts/production_smoke.py --base-url https://YOUR-STAGING-API.onrender.com
+```
+
+Expected: `OVERALL: PASS`
+
+Smoke test verifies:
+
+- Health + system status + production readiness flags
+- Request ID headers
+- Auth register/login/me
+- Project create + generation poll
+- Scenarios + usage summary
+- Redis/worker readiness flags (via system status)
+- File access behavior (unauthenticated file probe when JWT required)
+
+## CI
+
+- [ ] GitHub Actions `CI` workflow green on target branch
+- [ ] Backend pytest + frontend lint/test/build passed
+
+## Rollback plan
+
+- [ ] Previous Render deploy ID noted
+- [ ] Previous Netlify deploy noted
+- [ ] Database migration is forward-only (no destructive downgrade planned)
+
+---
+
+After all items pass, run **[MANUAL_QA.md](./MANUAL_QA.md)** for full browser QA, then promote to production.

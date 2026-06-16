@@ -1,210 +1,361 @@
 "use client";
 
-import { useParams } from "next/navigation";
 import Link from "next/link";
-import { useMemo } from "react";
-import { ArrowLeft } from "lucide-react";
+import { useParams } from "next/navigation";
+import { useCallback, useMemo, useState } from "react";
+import { ArrowLeft, GitCompare, Pin } from "lucide-react";
 import {
   Bar,
   BarChart,
   CartesianGrid,
-  Legend,
   ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis,
 } from "recharts";
-import BottomSummaryBar from "@/components/layout/BottomSummaryBar";
-import MobileBottomNav from "@/components/layout/MobileBottomNav";
 import { ProjectError, ProjectLoading } from "@/components/layout/ProjectHeader";
-import { Badge } from "@/components/ui/badge";
+import ChartCard from "@/components/project-results/ChartCard";
+import ProjectResultShell from "@/components/project-results/ProjectResultShell";
+import ResultPageHeader from "@/components/project-results/ResultPageHeader";
+import { StatusPill } from "@/components/project-results/StatusPill";
+import EmptyState from "@/components/ui/empty-state";
+import { GlassCard } from "@/components/ui/glass-card";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import ScenarioComparePanel from "@/components/workspace/ScenarioComparePanel";
 import { useProjectData } from "@/hooks/useProjectData";
+import { api } from "@/lib/api";
+import { formatDateTime } from "@/lib/format-display";
 import { CHART } from "@/lib/chart-theme";
 import { formatCurrency } from "@/lib/utils";
+import type { ScenarioCompareResult, ScenarioSummary } from "@/lib/types";
+import { cn } from "@/lib/utils";
+
+type Filter = "all" | "latest" | "completed";
 
 export default function ScenarioComparePage() {
   const params = useParams<{ id: string }>();
   const projectId = Number(params.id);
-  const { project, scenarios, loading, error, load, summaryStats } = useProjectData(projectId);
+  const { project, scenarioSummaries, loading, error, load, summaryStats, selectScenario } =
+    useProjectData(projectId);
+  const [filter, setFilter] = useState<Filter>("completed");
+  const [selectedCompare, setSelectedCompare] = useState<number[]>([]);
+  const [compareResult, setCompareResult] = useState<ScenarioCompareResult | null>(null);
+  const [comparing, setComparing] = useState(false);
+
+  const filtered = useMemo(() => {
+    let list = [...scenarioSummaries];
+    if (filter === "completed") list = list.filter((s) => s.status === "completed");
+    if (filter === "latest")
+      list = list.sort((a, b) => +new Date(b.created_at ?? 0) - +new Date(a.created_at ?? 0)).slice(0, 3);
+    return list;
+  }, [scenarioSummaries, filter]);
 
   const completed = useMemo(
-    () => scenarios.filter((s) => s.status === "completed"),
-    [scenarios],
+    () => scenarioSummaries.filter((s) => s.status === "completed"),
+    [scenarioSummaries],
   );
 
   const chartData = useMemo(
     () =>
-      completed.map((s) => {
-        const c = s.design_output_json?.calculated?.cost_summary;
-        const q = s.design_output_json?.calculated?.quantities;
-        return {
-          name: s.name.length > 12 ? `${s.name.slice(0, 10)}…` : s.name,
-          cost: c?.total_medium ?? 0,
-          cement: q?.cement_bags ?? 0,
-          steel: (q?.steel_kg ?? 0) / 1000,
-        };
-      }),
+      completed.map((s) => ({
+        name: s.name.length > 14 ? `${s.name.slice(0, 12)}…` : s.name,
+        cost: s.cost_total ?? 0,
+        cement: s.materials_summary?.concrete_m3 ?? 0,
+        steel: (s.materials_summary?.steel_kg ?? 0) / 1000,
+        duration: 0,
+      })),
     [completed],
   );
+
+  const bestCost = useMemo(() => {
+    if (chartData.length === 0) return null;
+    const costs = chartData.map((d) => d.cost).filter((c) => c > 0);
+    return costs.length ? Math.min(...costs) : null;
+  }, [chartData]);
+
+  const toggleCompare = (id: number) => {
+    setSelectedCompare((prev) => {
+      if (prev.includes(id)) return prev.filter((x) => x !== id);
+      if (prev.length >= 4) return prev;
+      return [...prev, id];
+    });
+  };
+
+  const runCompare = useCallback(async () => {
+    if (selectedCompare.length < 2) return;
+    setComparing(true);
+    try {
+      const result = await api.post<ScenarioCompareResult>(
+        `/api/projects/${projectId}/scenarios/compare`,
+        { scenario_ids: selectedCompare },
+      );
+      setCompareResult(result);
+    } finally {
+      setComparing(false);
+    }
+  }, [projectId, selectedCompare]);
 
   if (loading) return <ProjectLoading message="Loading scenarios…" />;
   if (error || !project) return <ProjectError error={error || "Not found"} onRetry={load} />;
 
   return (
-    <div className="flex-1 flex flex-col min-h-0 pb-14 md:pb-0">
-      <div className="flex-1 overflow-y-auto p-6 space-y-6 max-w-6xl mx-auto w-full">
-        <div className="flex items-center gap-3">
-          <Link href={`/projects/${projectId}/workspace`}>
-            <Button variant="secondary" size="sm" className="gap-1.5">
-              <ArrowLeft className="h-3.5 w-3.5" />
-              Back to Studio
-            </Button>
-          </Link>
-          <p className="text-sm text-muted-foreground">
-            Compare cost, timeline, and parameters across AI design runs.
-          </p>
-        </div>
+    <ProjectResultShell projectId={projectId} stats={summaryStats} maxWidth="max-w-[1400px]">
+      <ResultPageHeader
+        title="Scenario Comparison"
+        subtitle="Compare cost, validation, geometry modes, and warnings across design runs."
+        status={completed.length >= 2 ? "Ready to compare" : "Need more scenarios"}
+        statusVariant={completed.length >= 2 ? "success" : "warning"}
+        actions={
+          <div className="flex flex-wrap gap-2">
+            {selectedCompare.length >= 2 && (
+              <Button size="sm" className="gap-1.5" disabled={comparing} onClick={runCompare}>
+                <GitCompare className="h-3.5 w-3.5" />
+                Compare {selectedCompare.length}
+              </Button>
+            )}
+            <Link href={`/projects/${projectId}/workspace`}>
+              <Button variant="secondary" size="sm" className="gap-1.5">
+                <ArrowLeft className="h-3.5 w-3.5" />
+                Back to Studio
+              </Button>
+            </Link>
+          </div>
+        }
+      />
 
-        {completed.length < 2 ? (
-          <Card className="border-dashed p-10 text-center">
-            <p className="font-medium mb-2">Need at least 2 completed scenarios</p>
-            <p className="text-sm text-muted-foreground mb-4">
-              Generate multiple designs with different parameters to compare outcomes.
-            </p>
+      <div className="flex flex-wrap gap-2">
+        {(
+          [
+            { id: "completed" as const, label: "Completed" },
+            { id: "latest" as const, label: "Latest" },
+            { id: "all" as const, label: "All" },
+          ] as const
+        ).map(({ id, label }) => (
+          <button
+            key={id}
+            type="button"
+            onClick={() => setFilter(id)}
+            className={cn(
+              "rounded-lg border px-3 py-1.5 text-[11px] font-medium transition-all",
+              filter === id
+                ? "border-[rgba(59,130,246,0.4)] bg-[rgba(59,130,246,0.15)] text-[#38BDF8]"
+                : "border-[rgba(148,163,184,0.18)] text-[#94A3B8] hover:text-[#F8FAFC]",
+            )}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {completed.length < 2 ? (
+        <GlassCard className="p-10">
+          <EmptyState
+            icon={GitCompare}
+            title="Generate another design scenario"
+            description="Create at least two completed scenarios with different parameters to compare alternatives."
+          />
+          <div className="mt-6 flex justify-center">
             <Link href={`/projects/${projectId}/workspace`}>
               <Button size="sm">Open AI Design Studio</Button>
             </Link>
-          </Card>
-        ) : (
-          <>
-            <div className="grid lg:grid-cols-3 gap-4">
-              {[
-                { title: "Cost (medium)", key: "cost" as const, format: (v: number) => formatCurrency(v) },
-                { title: "Cement (bags)", key: "cement" as const, format: (v: number) => v.toLocaleString() },
-                { title: "Steel (tonnes)", key: "steel" as const, format: (v: number) => v.toFixed(1) },
-              ].map(({ title, key, format }) => (
-                <Card key={key}>
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm">{title}</CardTitle>
-                  </CardHeader>
-                  <CardContent className="h-48">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={chartData}>
-                        <CartesianGrid strokeDasharray="3 3" stroke={CHART.grid} />
-                        <XAxis dataKey="name" tick={{ fontSize: 9, fill: CHART.tick }} />
-                        <YAxis tick={{ fontSize: 9, fill: CHART.tick }} />
-                        <Tooltip formatter={(v) => format(Number(v))} contentStyle={CHART.tooltip} />
-                        <Legend />
-                        <Bar dataKey={key} fill={CHART.accent} radius={[4, 4, 0, 0]} />
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-
-            <div className="overflow-x-auto">
-            <table className="data-table w-full min-w-[720px]">
-              <thead>
-                <tr>
-                  <th className="text-left px-3 py-2">Metric</th>
-                  {completed.map((s) => (
-                    <th key={s.id} className="text-left px-3 py-2">
-                      {s.name}
-                      <Badge variant="success" className="ml-2 text-[9px]">
-                        {s.status}
-                      </Badge>
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {[
-                  {
-                    label: "Summary",
-                    get: (s: (typeof completed)[0]) => s.design_output_json?.summary?.slice(0, 80) ?? "—",
-                  },
-                  {
-                    label: "Cost (medium)",
-                    get: (s: (typeof completed)[0]) => {
-                      const c = s.design_output_json?.calculated?.cost_summary;
-                      return c ? formatCurrency(c.total_medium, c.currency) : "—";
-                    },
-                  },
-                  {
-                    label: "Cost (low – high)",
-                    get: (s: (typeof completed)[0]) => {
-                      const c = s.design_output_json?.calculated?.cost_summary;
-                      return c
-                        ? `${formatCurrency(c.total_low, c.currency)} – ${formatCurrency(c.total_high, c.currency)}`
-                        : "—";
-                    },
-                  },
-                  {
-                    label: "Timeline (months)",
-                    get: (s: (typeof completed)[0]) => {
-                      const t = s.design_output_json?.calculated?.timeline;
-                      return t?.estimated_months_medium != null
-                        ? `${t.estimated_months_low}–${t.estimated_months_high} (med ${t.estimated_months_medium})`
-                        : "—";
-                    },
-                  },
-                  {
-                    label: "Cement (bags)",
-                    get: (s: (typeof completed)[0]) =>
-                      s.design_output_json?.calculated?.quantities?.cement_bags?.toLocaleString() ?? "—",
-                  },
-                  {
-                    label: "Steel (kg)",
-                    get: (s: (typeof completed)[0]) =>
-                      s.design_output_json?.calculated?.quantities?.steel_kg?.toLocaleString() ?? "—",
-                  },
-                  {
-                    label: "Risks",
-                    get: (s: (typeof completed)[0]) => String(s.design_output_json?.risks?.length ?? 0),
-                  },
-                ].map((row) => (
-                  <tr key={row.label} className="border-t border-border">
-                    <td className="px-3 py-2 text-xs font-medium text-muted-foreground">{row.label}</td>
-                    {completed.map((s) => (
-                      <td key={s.id} className="px-3 py-2 text-xs">
-                        {row.get(s)}
-                      </td>
-                    ))}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
           </div>
-          </>
-        )}
-
-        {scenarios.length > 0 && (
-          <div className="grid md:grid-cols-2 gap-4">
-            {scenarios.map((s) => (
-              <Card key={s.id}>
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm flex items-center gap-2">
-                    {s.name}
-                    <Badge variant={s.status === "completed" ? "success" : "warning"}>{s.status}</Badge>
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="text-xs text-muted-foreground space-y-1">
-                  <p>{s.design_output_json?.summary ?? "No output yet"}</p>
-                  <p className="font-data text-[10px]">
-                    Created {new Date(s.created_at).toLocaleString()}
-                  </p>
-                </CardContent>
-              </Card>
+        </GlassCard>
+      ) : (
+        <>
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+            {[
+              { title: "Cost (medium)", key: "cost" as const, format: (v: number) => formatCurrency(v) },
+              { title: "Concrete (m³)", key: "cement" as const, format: (v: number) => v.toLocaleString("en-IN") },
+              { title: "Steel (tonnes)", key: "steel" as const, format: (v: number) => v.toFixed(1) },
+            ].map(({ title, key, format }) => (
+              <ChartCard key={key} title={title} height="h-44 sm:h-48">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={chartData}>
+                    <CartesianGrid strokeDasharray="3 3" stroke={CHART.grid} vertical={false} />
+                    <XAxis dataKey="name" tick={{ fontSize: 9, fill: CHART.tick }} axisLine={false} tickLine={false} />
+                    <YAxis tick={{ fontSize: 9, fill: CHART.tick }} axisLine={false} tickLine={false} />
+                    <Tooltip formatter={(v) => format(Number(v))} contentStyle={CHART.tooltip} />
+                    <Bar dataKey={key} fill={CHART.accent} radius={[4, 4, 0, 0]} maxBarSize={36} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </ChartCard>
             ))}
           </div>
-        )}
-      </div>
 
-      <MobileBottomNav projectId={projectId} />
-      <BottomSummaryBar stats={summaryStats} />
-    </div>
+          <GlassCard className="overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="data-table w-full min-w-[720px]">
+                <thead>
+                  <tr>
+                    <th className="sticky left-0 z-10 bg-[#0D1117] min-w-[140px]">Metric</th>
+                    {completed.map((s) => (
+                      <th key={s.scenario_id} className="min-w-[160px]">
+                        <span className="block truncate">{s.name}</span>
+                        <StatusPill label={s.status} variant={s.status === "completed" ? "success" : "warning"} className="mt-1" />
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {[
+                    {
+                      label: "Cost",
+                      get: (s: ScenarioSummary) => s.cost_total,
+                      format: (v: number | null | undefined) => (v != null ? formatCurrency(v) : "—"),
+                      best: "min" as const,
+                    },
+                    {
+                      label: "Validation score",
+                      get: (s: ScenarioSummary) => s.validation_score,
+                      format: (v: number | null | undefined) => (v != null ? String(v) : "—"),
+                      best: "max" as const,
+                    },
+                    {
+                      label: "Validation status",
+                      get: (s: ScenarioSummary) => s.validation_status,
+                      format: (v: string | null | undefined) => v ?? "—",
+                    },
+                    {
+                      label: "Length (m)",
+                      get: (s: ScenarioSummary) => s.length_m,
+                      format: (v: number | null | undefined) => (v != null ? String(v) : "—"),
+                    },
+                    {
+                      label: "Lanes / width",
+                      get: (s: ScenarioSummary) =>
+                        [s.lanes != null ? `${s.lanes} ln` : null, s.width_m != null ? `${s.width_m}m` : null]
+                          .filter(Boolean)
+                          .join(" · ") || null,
+                      format: (v: string | null) => v ?? "—",
+                    },
+                    {
+                      label: "Max grade %",
+                      get: (s: ScenarioSummary) => s.max_grade_percent,
+                      format: (v: number | null | undefined) => (v != null ? v.toFixed(1) : "—"),
+                    },
+                    {
+                      label: "Geometry / elevation",
+                      get: (s: ScenarioSummary) => `${s.geometry_mode ?? "—"} / ${s.elevation_mode ?? "—"}`,
+                      format: (v: string) => v,
+                    },
+                    {
+                      label: "Warnings",
+                      get: (s: ScenarioSummary) => s.warning_count ?? 0,
+                      format: (v: number) => String(v),
+                      best: "min" as const,
+                    },
+                  ].map((row) => {
+                    const values = completed.map((s) => row.get(s));
+                    const numeric = values.filter((v): v is number => typeof v === "number");
+                    const bestVal =
+                      "best" in row && row.best === "min" && numeric.length
+                        ? Math.min(...numeric)
+                        : "best" in row && row.best === "max" && numeric.length
+                          ? Math.max(...numeric)
+                          : null;
+                    return (
+                      <tr key={row.label}>
+                        <td className="sticky left-0 z-10 bg-[rgba(13,17,23,0.98)] text-xs font-medium text-[#94A3B8]">
+                          {row.label}
+                        </td>
+                        {completed.map((s, i) => {
+                          const raw = values[i];
+                          const display = row.format(raw as never);
+                          const isBest = typeof raw === "number" && bestVal != null && raw === bestVal;
+                          return (
+                            <td
+                              key={s.scenario_id}
+                              className={cn("text-xs font-data", isBest && "text-[#34D399] font-semibold")}
+                            >
+                              {display}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </GlassCard>
+        </>
+      )}
+
+      {filtered.length > 0 && (
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          {filtered.map((s) => {
+            const isBest = s.cost_total != null && bestCost != null && s.cost_total === bestCost;
+            const checked = selectedCompare.includes(s.scenario_id);
+            return (
+              <GlassCard key={s.scenario_id} className={cn("p-4", isBest && "border-[rgba(16,185,129,0.35)]")}>
+                <div className="flex items-start justify-between gap-2 mb-2">
+                  <div className="flex items-start gap-2 min-w-0">
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() => toggleCompare(s.scenario_id)}
+                      className="mt-1 shrink-0"
+                      title="Include in compare"
+                    />
+                    <h3 className="text-sm font-semibold text-[#F8FAFC] truncate">{s.name}</h3>
+                  </div>
+                  <StatusPill label={s.status} variant={s.status === "completed" ? "success" : "warning"} />
+                </div>
+                <p className="text-[11px] text-[#64748B] mb-3">{formatDateTime(s.created_at ?? "")}</p>
+                <dl className="grid grid-cols-2 gap-2 text-[11px] mb-3">
+                  <div>
+                    <dt className="text-[#64748B]">Cost</dt>
+                    <dd className="font-data font-medium text-[#F8FAFC]">
+                      {s.cost_total != null ? formatCurrency(s.cost_total, s.cost_currency) : "—"}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-[#64748B]">Validation</dt>
+                    <dd className="font-data font-medium text-[#F8FAFC]">
+                      {s.validation_status ?? "—"}
+                      {s.validation_score != null ? ` (${s.validation_score})` : ""}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-[#64748B]">Steel</dt>
+                    <dd className="font-data text-[#CBD5E1]">
+                      {s.materials_summary?.steel_kg?.toLocaleString("en-IN") ?? "—"} kg
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-[#64748B]">Warnings</dt>
+                    <dd className="font-data text-[#CBD5E1]">{s.warning_count ?? 0}</dd>
+                  </div>
+                </dl>
+                <p className="text-[11px] text-[#94A3B8] line-clamp-2 mb-3">
+                  {s.generation_mode ?? "—"} · {s.geometry_mode ?? "—"} / {s.elevation_mode ?? "—"}
+                </p>
+                <div className="flex gap-2">
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    className="flex-1 h-8 text-[11px]"
+                    onClick={() => void selectScenario(s)}
+                  >
+                    View in studio
+                  </Button>
+                  <Button size="sm" variant="ghost" className="h-8 px-2" title="Pin scenario">
+                    <Pin className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              </GlassCard>
+            );
+          })}
+        </div>
+      )}
+
+      {compareResult && (
+        <ScenarioComparePanel
+          result={compareResult}
+          summaries={scenarioSummaries}
+          onClose={() => setCompareResult(null)}
+        />
+      )}
+    </ProjectResultShell>
   );
 }

@@ -13,8 +13,13 @@ backend/.pytest_cache/
 .pytest_cache/
 
 # local database / storage
+backend/*.db
 backend/dev.db
 backend/storage/
+
+# Cursor IDE artifacts
+.cursor/
+.cursor/video-frames*/
 
 # node
 node_modules/

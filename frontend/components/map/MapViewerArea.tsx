@@ -1,9 +1,8 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { motion } from "framer-motion";
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { Globe, Map as MapIcon, PanelLeft, Bot } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Compass, Crosshair, Globe, LocateFixed, PanelLeft, Bot, ScanEye, SlidersHorizontal } from "lucide-react";
 import SiteSuggestionsPanel from "@/components/map/SiteSuggestionsPanel";
 import MapToolbarExtended from "@/components/map/MapToolbarExtended";
 import Scene3DOverlay from "@/components/map/Scene3DOverlay";
@@ -11,6 +10,7 @@ import ElevationProfileChart from "@/components/map/ElevationProfileChart";
 import CommandPalette from "@/components/layout/CommandPalette";
 import { useWorkspaceMap } from "@/components/layout/WorkspaceMapContext";
 import { Button } from "@/components/ui/button";
+import MapToolbarToggle from "@/components/ui/map-toolbar-toggle";
 import { Input } from "@/components/ui/input";
 import { Tabs } from "@/components/ui/tabs";
 import { api } from "@/lib/api";
@@ -19,7 +19,9 @@ import type { SiteSuggestion } from "@/lib/site-suggestions";
 import { generateSiteSuggestions } from "@/lib/site-suggestions";
 import SurveyVisualWarning from "@/components/survey/SurveyVisualWarning";
 import { useProjectStore } from "@/stores/projectStore";
-import { fetchTileProviders } from "@/lib/map-imagery";
+import { basemapFor3d, fetchTileProviders, type MapBasemap } from "@/lib/map-imagery";
+import MapStyleToggle from "@/components/ui/map-style-toggle";
+import { toolRequires2dMap } from "@/lib/map/workspace-map-tools";
 import { cn } from "@/lib/utils";
 
 const MapView = dynamic(() => import("@/components/map/MapView"), { ssr: false });
@@ -57,14 +59,31 @@ export default function MapViewerArea({
   const projectLocationKey = `${project.id}:${projectLng}:${projectLat}:${project.location_name ?? ""}`;
 
   const [view, setView] = useState<"2d" | "3d">(defaultView);
-  const [basemap, setBasemap] = useState<"satellite" | "terrain" | "street">("terrain");
+  const [basemap, setBasemap] = useState<MapBasemap>("satellite");
   const [searchDraft, setSearchDraft] = useState<string | null>(null);
   const [searching, setSearching] = useState(false);
   const [results, setResults] = useState<GeocodeResult[]>([]);
   const [mapCenterOverride, setMapCenterOverride] = useState<[number, number] | null>(null);
   const [locationSyncKey, setLocationSyncKey] = useState(projectLocationKey);
   const [analysis, setAnalysis] = useState<SiteAnalysis | null>(null);
-  const { setSiteSuggestions, layers, surveyModeEnabled, surveyAccuracyTier, engineeringLayerFeatures, surveyGcpFeatures, surveyLayers } = useProjectStore();
+  const [satelliteBrightness, setSatelliteBrightness] = useState(100);
+  const [overlayOpacity, setOverlayOpacity] = useState(85);
+  const [terrainExaggeration, setTerrainExaggeration] = useState(1);
+  const {
+    activeTool,
+    setSiteSuggestions,
+    layers,
+    surveyModeEnabled,
+    surveyAccuracyTier,
+    engineeringLayerFeatures,
+    surveyGcpFeatures,
+    surveyLayers,
+    undergroundView,
+    toggleUndergroundView,
+    mapRef,
+    mapCursor,
+  } = useProjectStore();
+  const viewBeforeDrawRef = useRef<"2d" | "3d" | null>(null);
   const { focusMode, toolsOpen, copilotOpen, onOpenTools, onOpenCopilot } = useWorkspaceMap();
 
   if (projectLocationKey !== locationSyncKey) {
@@ -75,16 +94,17 @@ export default function MapViewerArea({
 
   useEffect(() => {
     if (defaultView !== "3d") return;
-    void fetchTileProviders().then((providers) => {
-      useProjectStore.getState().setLayers({
-        terrain: true,
-        tiles3d: providers.google_3d_tiles_available || providers.cesium_ion_available,
-      });
+    if (basemap === "terrain") {
+      queueMicrotask(() => setBasemap("satellite"));
+      useProjectStore.getState().setLayers({ satellite: true });
+    }
+    void fetchTileProviders().then(() => {
+      useProjectStore.getState().setLayers({ terrain: true });
     });
-  }, [defaultView]);
+  }, [basemap, defaultView]);
 
-  const activeBasemap: "satellite" | "terrain" | "street" =
-    layers.satellite ? "satellite" : basemap === "satellite" ? "terrain" : basemap;
+  const activeBasemap: MapBasemap =
+    layers.satellite && basemap === "satellite" ? "satellite" : basemap;
 
   const mapCenter: [number, number] = useMemo(
     () => mapCenterOverride ?? [projectLng, projectLat],
@@ -95,12 +115,9 @@ export default function MapViewerArea({
   useEffect(() => {
     let cancelled = false;
     api
-      .get<SiteAnalysis>(`/api/projects/${project.id}/site-analysis`)
+      .getOptional<SiteAnalysis>(`/api/projects/${project.id}/site-analysis`)
       .then((data) => {
         if (!cancelled) setAnalysis(data);
-      })
-      .catch(() => {
-        if (!cancelled) setAnalysis(null);
       });
     return () => {
       cancelled = true;
@@ -181,6 +198,7 @@ export default function MapViewerArea({
   };
 
   const handleBasemap = (mode: typeof basemap) => {
+    if (view === "3d" && mode === "terrain") return;
     setBasemap(mode);
     useProjectStore.getState().setLayers({ satellite: mode === "satellite" });
     if (mode === "satellite" && view === "2d") {
@@ -193,15 +211,34 @@ export default function MapViewerArea({
   };
 
   const handleViewChange = (next: "2d" | "3d") => {
+    if (next === "3d" && toolRequires2dMap(activeTool)) return;
     setView(next);
     if (next === "3d") {
-      void fetchTileProviders().then((providers) => {
-        useProjectStore.getState().setLayers({
-          terrain: true,
-          tiles3d: providers.google_3d_tiles_available || providers.cesium_ion_available,
-        });
+      if (basemap === "terrain") {
+        setBasemap("satellite");
+        useProjectStore.getState().setLayers({ satellite: true });
+      }
+      void fetchTileProviders().then(() => {
+        useProjectStore.getState().setLayers({ terrain: true });
       });
     }
+  };
+
+  const handleUseMapCenter = async () => {
+    const viewport = mapRef?.getViewport?.();
+    const center = viewport?.center ?? mapCenter;
+    const name = `Map center ${center[1].toFixed(5)}, ${center[0].toFixed(5)}`;
+    setSearchDraft(name);
+    setMapCenterOverride(center);
+    await onLocationChange?.(center[0], center[1], name);
+  };
+
+  const recenterHome = () => {
+    if (mapRef?.flyHome) {
+      mapRef.flyHome();
+      return;
+    }
+    setMapCenterOverride([projectLng, projectLat]);
   };
 
   const applyBoundary = useCallback(
@@ -226,11 +263,28 @@ export default function MapViewerArea({
     [onBoundaryDrawn, onAlignmentDrawn],
   );
 
+  // DrawingToolsToolbar drives projectStore tools that only MapView (2D) handles.
+  useEffect(() => {
+    if (toolRequires2dMap(activeTool)) {
+      setView((current) => {
+        if (current === "3d") {
+          viewBeforeDrawRef.current = "3d";
+          return "2d";
+        }
+        return current;
+      });
+      return;
+    }
+    if (activeTool === "select" && viewBeforeDrawRef.current === "3d") {
+      viewBeforeDrawRef.current = null;
+      setView("3d");
+    }
+  }, [activeTool]);
+
   return (
     <div
       className={cn(
         "absolute inset-0 overflow-hidden map-viewport",
-        focusMode && "rounded-none",
       )}
     >
       <CommandPalette projectId={project.id} onAnalyze={onAnalyze} onGenerate={onGenerate} />
@@ -242,29 +296,49 @@ export default function MapViewerArea({
             focusMode ? "left-14 right-3" : "left-3 right-3",
           )}
         >
-          <div className="flex items-center gap-2">
-            <div className="relative pointer-events-auto panel-glass flex min-h-10 min-w-0 max-w-sm flex-1 items-center gap-1 rounded-md px-1.5 py-1 sm:max-w-md">
+          <div className="flex items-start gap-2">
+            <div className="relative pointer-events-auto flex min-h-11 min-w-0 max-w-md flex-1 items-center gap-1 rounded-2xl border border-[rgba(148,163,184,0.18)] bg-[rgba(5,7,10,0.72)] px-2 py-1.5 shadow-[0_18px_44px_rgba(0,0,0,0.34)] backdrop-blur-xl sm:max-w-lg">
+              <LocateFixed className="h-4 w-4 shrink-0 text-[#22D3EE]" />
               <Input
                 value={search}
                 onChange={(e) => setSearchDraft(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && doSearch()}
                 placeholder="Search location…"
-                className="h-8 min-w-0 flex-1 border-0 bg-transparent text-xs focus:ring-0"
+                className="h-8 min-w-0 flex-1 border-0 bg-transparent text-xs text-[#F8FAFC] focus:ring-0"
               />
+              <button
+                type="button"
+                onClick={() => void handleUseMapCenter()}
+                className="hidden h-8 shrink-0 items-center gap-1 rounded-lg border border-[rgba(148,163,184,0.16)] bg-white/[0.04] px-2 text-[10px] text-[#CBD5E1] hover:bg-white/[0.08] hover:text-[#F8FAFC] sm:flex"
+                title="Use current map center"
+              >
+                <Crosshair className="h-3.5 w-3.5" />
+                Center
+              </button>
               <Button size="sm" className="h-8 shrink-0 px-2" onClick={doSearch} disabled={searching}>
                 <Globe className="h-3.5 w-3.5" />
               </Button>
               {results.length > 0 && (
-                <ul className="absolute left-0 right-0 top-full z-30 mt-1 max-h-40 overflow-hidden overflow-y-auto rounded-md panel-glass shadow-lg">
+                <ul className="absolute left-0 right-0 top-full z-30 mt-2 max-h-52 overflow-hidden overflow-y-auto rounded-xl border border-[rgba(148,163,184,0.18)] bg-[rgba(11,17,28,0.98)] shadow-2xl backdrop-blur-xl">
+                  <li>
+                    <button
+                      type="button"
+                      onClick={() => void handleUseMapCenter()}
+                      className="flex w-full items-center gap-2 border-b border-[rgba(148,163,184,0.12)] px-3 py-2 text-left text-xs text-[#CBD5E1] hover:bg-[rgba(59,130,246,0.1)]"
+                    >
+                      <Crosshair className="h-3.5 w-3.5 text-[#22D3EE]" />
+                      Use map center
+                    </button>
+                  </li>
                   {results.map((r, i) => (
                     <li key={i}>
                       <button
                         type="button"
                         onClick={() => pickResult(r)}
-                        className="w-full border-b border-border px-3 py-2 text-left text-xs last:border-0 hover:bg-primary/10"
+                        className="w-full border-b border-[rgba(148,163,184,0.12)] px-3 py-2 text-left text-xs text-[#CBD5E1] last:border-0 hover:bg-[rgba(59,130,246,0.1)]"
                       >
                         {r.name}
-                        <span className="ml-1 text-muted-foreground">({r.provider})</span>
+                        <span className="ml-1 text-[#64748B]">({r.provider})</span>
                       </button>
                     </li>
                   ))}
@@ -272,23 +346,30 @@ export default function MapViewerArea({
               )}
             </div>
 
-            <div className="pointer-events-auto panel-glass shrink-0 rounded-md px-1 py-1">
-              <Tabs
-                bare
+            <div className="pointer-events-auto shrink-0">
+              <MapStyleToggle
+                value={view === "3d" ? basemapFor3d(activeBasemap) : activeBasemap}
+                onChange={handleBasemap}
+                view={view}
                 compact
-                tabs={[
-                  { id: "satellite", label: "Satellite" },
-                  { id: "terrain", label: "Terrain" },
-                  { id: "street", label: "Street" },
-                ]}
-                active={activeBasemap}
-                onChange={(id) => handleBasemap(id as typeof basemap)}
               />
             </div>
 
-            <div className="pointer-events-auto panel-glass shrink-0 rounded-md px-2 py-1 text-[10px] text-muted-foreground hidden sm:block">
-              Visual reference — not for quantity takeoff
-            </div>
+            {view === "3d" && (
+              <div className="pointer-events-auto flex shrink-0 items-center gap-1">
+                <MapToolbarToggle
+                  label="Transparent"
+                  icon={ScanEye}
+                  active={undergroundView}
+                  onChange={() => toggleUndergroundView()}
+                  title={
+                    undergroundView
+                      ? "Turn off transparent ground (opaque terrain)"
+                      : "Turn on transparent ground (see underground)"
+                  }
+                />
+              </div>
+            )}
 
             <div className="pointer-events-auto panel-glass flex shrink-0 items-center gap-0.5 rounded-md px-1 py-1">
               <Tabs
@@ -303,6 +384,53 @@ export default function MapViewerArea({
               />
               <MapToolbarExtended view={view} />
             </div>
+
+            <div className="pointer-events-auto hidden shrink-0 items-center gap-1 rounded-2xl border border-[rgba(148,163,184,0.18)] bg-[rgba(5,7,10,0.68)] p-1 shadow-lg backdrop-blur-xl md:flex">
+              <button
+                type="button"
+                onClick={recenterHome}
+                className="flex h-8 w-8 items-center justify-center rounded-lg text-[#CBD5E1] hover:bg-white/[0.08] hover:text-[#F8FAFC]"
+                title="Home / reset view"
+              >
+                <LocateFixed className="h-4 w-4" />
+              </button>
+              <button
+                type="button"
+                onClick={() => mapRef?.resetNorth?.()}
+                className="flex h-8 w-8 items-center justify-center rounded-lg text-[#CBD5E1] hover:bg-white/[0.08] hover:text-[#F8FAFC]"
+                title="Reset north"
+              >
+                <Compass className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+
+          <div className="pointer-events-auto hidden max-w-3xl items-center gap-2 overflow-x-auto rounded-2xl border border-[rgba(148,163,184,0.14)] bg-[rgba(5,7,10,0.62)] px-2 py-1.5 text-[10px] text-[#94A3B8] shadow-lg backdrop-blur-xl lg:flex">
+            <div className="flex shrink-0 items-center gap-1.5 text-[#CBD5E1]">
+              <SlidersHorizontal className="h-3.5 w-3.5 text-[#22D3EE]" />
+              Map tuning
+            </div>
+            {[
+              ["Satellite brightness", satelliteBrightness, setSatelliteBrightness, 60, 120, "%"],
+              ["Overlay opacity", overlayOpacity, setOverlayOpacity, 20, 100, "%"],
+              ["Terrain exaggeration", terrainExaggeration, setTerrainExaggeration, 1, 3, "x"],
+            ].map(([label, value, setter, min, max, suffix]) => (
+              <label key={label as string} className="flex shrink-0 items-center gap-1.5">
+                <span>{label as string}</span>
+                <input
+                  type="range"
+                  min={min as number}
+                  max={max as number}
+                  step={label === "Terrain exaggeration" ? 0.5 : 1}
+                  value={value as number}
+                  onChange={(e) => (setter as (value: number) => void)(Number(e.target.value))}
+                  className="h-1 w-20 accent-[#3B82F6]"
+                />
+                <span className="w-8 font-data text-[#CBD5E1]">
+                  {value as number}{suffix as string}
+                </span>
+              </label>
+            ))}
           </div>
         </div>
       )}
@@ -357,7 +485,38 @@ export default function MapViewerArea({
       {view === "2d" && <ElevationProfileChart project={project} />}
       {view === "3d" && <Scene3DOverlay />}
 
-      <div className="absolute inset-0">
+      <div className="pointer-events-none absolute bottom-4 left-4 z-20 hidden max-w-[calc(100%-2rem)] items-end gap-2 lg:flex">
+        <div className="rounded-2xl border border-[rgba(148,163,184,0.18)] bg-[rgba(5,7,10,0.68)] px-3 py-2 text-[10px] text-[#94A3B8] shadow-lg backdrop-blur-xl">
+          <div className="grid grid-cols-2 gap-x-4 gap-y-1">
+            <span>Lat</span>
+            <span className="font-data text-[#F8FAFC]">{(mapCursor?.lngLat?.[1] ?? mapCenter[1]).toFixed(5)}</span>
+            <span>Lon</span>
+            <span className="font-data text-[#F8FAFC]">{(mapCursor?.lngLat?.[0] ?? mapCenter[0]).toFixed(5)}</span>
+            <span>Zoom</span>
+            <span className="font-data text-[#F8FAFC]">{(mapCursor?.zoom ?? 15).toFixed(1)}</span>
+            <span>Source</span>
+            <span className="font-data text-[#F8FAFC]">{view === "3d" ? "Cesium" : "OSM/Esri"}</span>
+          </div>
+        </div>
+        <div className="rounded-2xl border border-[rgba(148,163,184,0.18)] bg-[rgba(5,7,10,0.68)] px-3 py-2 text-[10px] text-[#94A3B8] shadow-lg backdrop-blur-xl">
+          <div className="flex items-center gap-2">
+            <Compass className="h-4 w-4 text-[#22D3EE]" />
+            <span className="font-data text-[#F8FAFC]">{view.toUpperCase()}</span>
+            <span>Accuracy: visual planning only</span>
+          </div>
+          <div className="mt-1 h-1 w-24 rounded-full bg-white/20">
+            <div className="h-full w-2/3 rounded-full bg-[#22D3EE]" />
+          </div>
+          <p className="mt-1 font-data text-[#CBD5E1]">{mapCursor?.scaleLabel ?? "Scale visual"}</p>
+        </div>
+      </div>
+
+      <div
+        className="absolute inset-0"
+        style={{
+          filter: `brightness(${satelliteBrightness}%)`,
+        }}
+      >
         {view === "2d" ? (
           <MapView
             center={mapCenter}
@@ -377,42 +536,30 @@ export default function MapViewerArea({
         ) : (
           <CesiumView
             center={mapCenter}
-            basemap={activeBasemap}
+            basemap={basemapFor3d(activeBasemap)}
             boundary={project.boundary_geojson}
             alignment={project.alignment_geojson}
             modelUrl={modelUrl ?? null}
             excavationUrl={excavationUrl ?? null}
-            useModelLayers={!!modelUrl}
+            useModelLayers={false}
             roadFeatures={surveyModeEnabled && surveyLayers.surveyVectors ? engineeringLayerFeatures : roadFeatures}
             buildingFeatures={buildingFeatures}
             waterFeatures={waterFeatures}
             surveyMode={surveyModeEnabled}
             surveyGcpFeatures={surveyGcpFeatures}
             disableVendor3DTiles={surveyModeEnabled && !surveyLayers.visualBasemap}
-            terrainExaggeration={
-              analysis?.elevation_max_m != null && analysis?.elevation_min_m != null
-                ? 1.2 +
-                  Math.min(1.5, (analysis.elevation_max_m - analysis.elevation_min_m) / 200)
-                : 1.35
-            }
           />
         )}
       </div>
 
-      {!project.boundary_geojson && (
-        <div className="absolute inset-0 z-10 flex items-center justify-center pointer-events-none bg-background/40 backdrop-blur-[2px]">
-          <motion.div
-            initial={{ opacity: 0, scale: 0.98 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ duration: 0.25 }}
-            className="panel-glass rounded-lg px-8 py-6 text-center max-w-sm mx-4 shadow-lg pointer-events-none"
-          >
-            <MapIcon className="h-10 w-10 text-primary mx-auto mb-3" />
-            <p className="text-[15px] font-semibold mb-1">Select project site</p>
-            <p className="text-[13px] text-muted-foreground">
-              Use Smart Suggest, pick on map, or draw a boundary manually.
+      {view === "3d" && !modelUrl && !excavationUrl && (
+        <div className="pointer-events-none absolute inset-x-4 bottom-24 z-10 flex justify-center">
+          <div className="max-w-md rounded-2xl border border-[rgba(148,163,184,0.18)] bg-[rgba(5,7,10,0.72)] px-4 py-3 text-center shadow-lg backdrop-blur-xl">
+            <p className="text-sm font-semibold text-[#F8FAFC]">Draw an alignment or generate a concept</p>
+            <p className="mt-1 text-[12px] leading-snug text-[#94A3B8]">
+              AI model layers appear here after design generation completes.
             </p>
-          </motion.div>
+          </div>
         </div>
       )}
 

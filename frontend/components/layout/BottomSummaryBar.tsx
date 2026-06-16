@@ -1,5 +1,7 @@
 "use client";
 
+import Link from "next/link";
+import { useParams } from "next/navigation";
 import {
   Box,
   Clock,
@@ -94,17 +96,39 @@ export default function BottomSummaryBar({
   loading?: boolean;
   variant?: "bar" | "sidebar";
 }) {
+  const params = useParams<{ id?: string }>();
+  const projectId = params?.id;
+  const metricHref = (key: string) => {
+    if (!projectId) return null;
+    if (key === "totalCost") return `/projects/${projectId}/cost`;
+    if (key === "cementBags" || key === "steelKg" || key === "excavationM3") return `/projects/${projectId}/estimate`;
+    if (key === "timelineMonths") return `/projects/${projectId}/timeline`;
+    if (key === "riskScore") return `/projects/${projectId}/analysis`;
+    return `/projects/${projectId}/workspace`;
+  };
+
   if (variant === "sidebar") {
+    const hasData = ITEMS.some(({ key }) => {
+      const raw = stats[key as keyof SummaryStats];
+      return raw != null && typeof raw === "number";
+    });
+
     return (
-      <SidebarSection title="Project Summary">
-        <ul className={cn("space-y-1.5", loading && "opacity-60")}>
+      <SidebarSection title="Quantity estimate">
+        {!hasData && !loading ? (
+          <p className="text-[11px] text-[#64748B] leading-relaxed">
+            BOQ estimate appears after generation.
+          </p>
+        ) : (
+          <div className={cn("space-y-2", loading && "opacity-60")}>
+            <ul className="space-y-1.5">
           {ITEMS.map(({ key, label, icon: Icon, accent, format }) => {
             const raw = stats[key as keyof SummaryStats];
             const value = loading ? "…" : formatValue(key, raw, stats, format);
             return (
               <li
                 key={key}
-                className="flex items-center justify-between gap-2 text-[11px]"
+                className="flex items-center justify-between gap-2 rounded-lg border border-[rgba(148,163,184,0.1)] bg-black/15 px-2 py-1.5 text-[11px]"
                 title={`${label}: ${value}`}
               >
                 <span className="flex items-center gap-1.5 min-w-0 text-muted-foreground">
@@ -115,31 +139,69 @@ export default function BottomSummaryBar({
               </li>
             );
           })}
-        </ul>
+            </ul>
+            <div className="flex items-center justify-between gap-2">
+              <span className="rounded-full border border-[rgba(59,130,246,0.25)] bg-[rgba(59,130,246,0.1)] px-2 py-1 text-[10px] text-[#BFDBFE]">
+                Preliminary estimate
+              </span>
+            </div>
+            {projectId && (
+              <div className="grid grid-cols-2 gap-2">
+                <Link
+                  href={`/projects/${projectId}/estimate`}
+                  className="flex h-7 items-center justify-center rounded-lg border border-[rgba(148,163,184,0.14)] bg-white/[0.04] text-[10px] text-[#CBD5E1] hover:bg-white/[0.08] hover:text-[#F8FAFC]"
+                >
+                  View BOQ
+                </Link>
+                <Link
+                  href={`/projects/${projectId}/cost`}
+                  className="flex h-7 items-center justify-center rounded-lg border border-[rgba(148,163,184,0.14)] bg-white/[0.04] text-[10px] text-[#CBD5E1] hover:bg-white/[0.08] hover:text-[#F8FAFC]"
+                >
+                  Cost Analysis
+                </Link>
+              </div>
+            )}
+          </div>
+        )}
       </SidebarSection>
     );
   }
 
   return (
-    <div className={cn("panel-elevated px-2 py-1 sm:px-3", loading && "opacity-60")}>
-      <div className="flex items-center gap-0 overflow-x-auto scrollbar-none">
-        {ITEMS.map((item, i) => {
+    <div
+      className={cn(
+        "shrink-0 border-t border-[rgba(148,163,184,0.14)] bg-[rgba(5,7,10,0.86)] px-2 py-1.5 backdrop-blur-xl sm:px-3",
+        loading && "opacity-60",
+      )}
+    >
+      <div className="flex items-center gap-2 overflow-x-auto scrollbar-thin-dark">
+        <button
+          type="button"
+          className="flex h-7 shrink-0 items-center gap-1.5 rounded-full border border-[rgba(245,158,11,0.28)] bg-[rgba(245,158,11,0.1)] px-2.5 text-[10px] font-medium text-[#FCD34D]"
+          title="Open issue panel"
+        >
+          1 issue
+        </button>
+        {ITEMS.map((item) => {
           const { key, label, icon: Icon, accent, format } = item;
           const raw = stats[key as keyof SummaryStats];
           const value = loading ? "…" : formatValue(key, raw, stats, format);
+          const href = metricHref(key);
+          const chip = (
+            <div className="flex items-center gap-1.5 rounded-full border border-[rgba(148,163,184,0.12)] bg-white/[0.04] px-2.5 py-1 transition-colors hover:bg-white/[0.08]" title={`${label}: ${value}`}>
+              <Icon className={cn("h-3 w-3 shrink-0", accent === "text-primary" ? "text-[#3B82F6]" : accent === "text-accent" ? "text-[#22D3EE]" : accent === "text-warning" ? "text-[#F59E0B]" : accent === "text-success" ? "text-[#10B981]" : accent === "text-destructive" ? "text-[#EF4444]" : "text-[#94A3B8]")} />
+              <span className="hidden text-[9px] uppercase tracking-wide text-[#64748B] xl:inline">
+                {label}
+              </span>
+              <span className="font-data text-[11px] font-medium whitespace-nowrap text-[#F8FAFC]">
+                {value}
+              </span>
+            </div>
+          );
 
           return (
             <div key={key} className="flex items-center shrink-0">
-              {i > 0 && <div className="mx-1.5 h-3.5 w-px bg-border shrink-0" aria-hidden />}
-              <div className="flex items-center gap-1 px-1 py-0.5" title={`${label}: ${value}`}>
-                <Icon className={cn("h-3 w-3 shrink-0", accent)} />
-                <span className="hidden text-[9px] uppercase tracking-wide text-muted-foreground xl:inline">
-                  {label}
-                </span>
-                <span className="font-data text-[11px] font-medium whitespace-nowrap text-foreground">
-                  {value}
-                </span>
-              </div>
+              {href ? <Link href={href}>{chip}</Link> : chip}
             </div>
           );
         })}

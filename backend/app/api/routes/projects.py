@@ -1,20 +1,19 @@
 from datetime import datetime
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.core.disclaimer import DISCLAIMER
-from app.core.security import get_current_user_id
-from app.db.models import Project
+from app.core.project_catalog import PROJECT_TYPES, UNIT_OPTIONS
+from app.core.security import get_current_user, get_current_user_id
+from app.db.models import Project, User
 from app.db.session import IS_POSTGRES, get_db
+from app.services.usage import enforce_usage_limit, record_usage_event
 
 router = APIRouter(prefix="/api/projects", tags=["projects"])
-
-PROJECT_TYPES = {"flyover", "building", "pipeline", "road"}
-
 
 class ProjectCreate(BaseModel):
     name: str = Field(min_length=1, max_length=255)
@@ -83,20 +82,26 @@ def get_owned_project(project_id: int, db: Session, user_id: int) -> Project:
 @router.post("", response_model=ProjectOut, status_code=201)
 def create_project(
     payload: ProjectCreate,
+    request: Request,
     db: Session = Depends(get_db),
-    user_id: int = Depends(get_current_user_id),
+    user: User = Depends(get_current_user),
 ):
     if payload.project_type not in PROJECT_TYPES:
         raise HTTPException(422, f"project_type must be one of {sorted(PROJECT_TYPES)}")
+    if payload.units not in UNIT_OPTIONS:
+        raise HTTPException(422, f"units must be one of {sorted(UNIT_OPTIONS)}")
     _validate_geojson(payload.boundary_geojson, {"Polygon"})
     _validate_geojson(payload.alignment_geojson, {"LineString"})
 
-    project = Project(user_id=user_id, **payload.model_dump())
+    enforce_usage_limit(db, user, "project.create", request=request)
+
+    project = Project(user_id=user.id, **payload.model_dump())
     db.add(project)
     db.flush()
     _sync_postgis_geometry(db, project)
     db.commit()
     db.refresh(project)
+    record_usage_event(db, user_id=user.id, event_type="project.create", project_id=project.id)
     return project
 
 
@@ -189,10 +194,10 @@ def project_summaries(db: Session = Depends(get_db), user_id: int = Depends(get_
 
 @router.get("/demo", response_model=ProjectOut)
 def get_demo_project(db: Session = Depends(get_db), user_id: int = Depends(get_current_user_id)):
-    """Return the seeded Bengaluru demo project (creates it if missing)."""
-    from app.db.demo_seed import ensure_demo_project
+    """Return the seeded Bengaluru demo project for the current user."""
+    from app.db.demo_seed import ensure_demo_project_for_user
 
-    project = ensure_demo_project(db)
+    project = ensure_demo_project_for_user(db, user_id)
     if project is None:
         raise HTTPException(404, "Demo project not available")
     db.commit()
@@ -228,7 +233,10 @@ def update_project(
     project = get_owned_project(project_id, db, user_id)
     _validate_geojson(payload.boundary_geojson, {"Polygon"})
     _validate_geojson(payload.alignment_geojson, {"LineString"})
-    for key, value in payload.model_dump(exclude_unset=True).items():
+    data = payload.model_dump(exclude_unset=True)
+    if "units" in data and data["units"] not in UNIT_OPTIONS:
+        raise HTTPException(422, f"units must be one of {sorted(UNIT_OPTIONS)}")
+    for key, value in data.items():
         setattr(project, key, value)
     _sync_postgis_geometry(db, project)
     db.commit()

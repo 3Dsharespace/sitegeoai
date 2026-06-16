@@ -3,11 +3,13 @@
 import { useParams } from "next/navigation";
 import { CheckCircle2, Circle, Clock, Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import BottomSummaryBar from "@/components/layout/BottomSummaryBar";
-import MobileBottomNav from "@/components/layout/MobileBottomNav";
 import { ProjectError, ProjectLoading } from "@/components/layout/ProjectHeader";
-import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import MetricCard from "@/components/project-results/MetricCard";
+import ProjectResultShell from "@/components/project-results/ProjectResultShell";
+import ResultPageHeader from "@/components/project-results/ResultPageHeader";
+import { StatusPill } from "@/components/project-results/StatusPill";
+import EmptyState from "@/components/ui/empty-state";
+import { GlassCard } from "@/components/ui/glass-card";
 import { useProjectData } from "@/hooks/useProjectData";
 import { cn } from "@/lib/utils";
 
@@ -42,106 +44,115 @@ export default function TimelinePage() {
   };
 
   return (
-    <div className="flex-1 flex flex-col min-h-0 pb-14 md:pb-0">
-      <div className="flex-1 overflow-y-auto p-6 space-y-6 max-w-4xl mx-auto w-full">
-        {!design && (
-          <Card className="border-dashed p-8 text-center">
-            <Clock className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
-            <p className="text-muted-foreground">Generate a design to see the construction sequence and timeline.</p>
-          </Card>
-        )}
+    <ProjectResultShell projectId={projectId} stats={summaryStats} maxWidth="max-w-5xl">
+      <ResultPageHeader
+        title="Construction Timeline"
+        subtitle="Preliminary construction sequence and duration estimate."
+        status={design ? "Preliminary" : "Pending design"}
+        actions={
+          design ? (
+            <Button variant="secondary" size="sm" className="gap-2" onClick={downloadTimeline}>
+              <Download className="h-3.5 w-3.5" />
+              Download Timeline
+            </Button>
+          ) : undefined
+        }
+      />
 
-        {design && (
-          <>
-            <div className="flex justify-end">
-              <Button variant="secondary" size="sm" className="gap-2" onClick={downloadTimeline}>
-                <Download className="h-3.5 w-3.5" />
-                Download Timeline
-              </Button>
-            </div>
-            <div className="grid sm:grid-cols-3 gap-4">
-              <Card>
-                <CardContent className="p-4">
-                  <p className="text-xs text-muted-foreground">Estimated Duration (low)</p>
-                  <p className="text-2xl font-bold">{timeline?.estimated_months_low ?? "—"} mo</p>
-                </CardContent>
-              </Card>
-              <Card glow>
-                <CardContent className="p-4">
-                  <p className="text-xs text-muted-foreground">Estimated Duration (medium)</p>
-                  <p className="text-2xl font-bold text-accent">{months ?? "—"} mo</p>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardContent className="p-4">
-                  <p className="text-xs text-muted-foreground">Estimated Duration (high)</p>
-                  <p className="text-2xl font-bold">{timeline?.estimated_months_high ?? "—"} mo</p>
-                </CardContent>
-              </Card>
+      {!design && (
+        <GlassCard className="p-8">
+          <EmptyState
+            icon={Clock}
+            title="No timeline yet"
+            description="Generate a design to see the construction sequence and duration estimates."
+          />
+        </GlassCard>
+      )}
+
+      {design && (
+        <>
+          <div className="grid sm:grid-cols-3 gap-3">
+            <MetricCard label="Duration (low)" value={timeline?.estimated_months_low != null ? `${timeline.estimated_months_low}` : "—"} unit="months" />
+            <MetricCard label="Duration (medium)" value={months != null ? `${months}` : "—"} unit="months — planning default" highlight />
+            <MetricCard label="Duration (high)" value={timeline?.estimated_months_high != null ? `${timeline.estimated_months_high}` : "—"} unit="months" />
+          </div>
+
+          <GlassCard className="p-4 sm:p-6">
+            <div className="flex items-center gap-2 mb-6">
+              <h3 className="text-sm font-semibold text-[#F8FAFC]">Construction sequence</h3>
+              <StatusPill label="Preliminary" variant="warning" />
             </div>
 
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  Construction Sequence
-                  <Badge variant="warning">Preliminary</Badge>
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-0">
-                  {sequence.map((step, i) => (
-                    <div key={i} className="flex gap-4">
-                      <div className="flex flex-col items-center">
-                        <div
-                          className={cn(
-                            "flex h-8 w-8 items-center justify-center rounded-full border",
-                            i === 0 ? "bg-primary/20 border-primary text-accent" : "border-border",
-                          )}
-                        >
-                          {i < sequence.length - 1 ? (
-                            <CheckCircle2 className="h-4 w-4" />
-                          ) : (
-                            <Circle className="h-4 w-4" />
-                          )}
-                        </div>
-                        {i < sequence.length - 1 && (
-                          <div className="w-px flex-1 bg-border min-h-[24px]" />
+            <div className="grid gap-6 lg:grid-cols-[1fr_280px]">
+              <div className="space-y-0">
+                {sequence.map((step, i) => (
+                  <div key={i} className="flex gap-4">
+                    <div className="flex flex-col items-center">
+                      <div
+                        className={cn(
+                          "flex h-9 w-9 items-center justify-center rounded-full border",
+                          i === 0
+                            ? "border-[rgba(59,130,246,0.5)] bg-[rgba(59,130,246,0.15)] text-[#38BDF8]"
+                            : "border-[rgba(148,163,184,0.25)] bg-[rgba(15,23,42,0.6)] text-[#94A3B8]",
+                        )}
+                      >
+                        {i < sequence.length - 1 ? (
+                          <CheckCircle2 className="h-4 w-4" />
+                        ) : (
+                          <Circle className="h-4 w-4" />
                         )}
                       </div>
-                      <div className="pb-6 pt-1">
-                        <p className="text-sm font-medium">Phase {i + 1}</p>
-                        <p className="text-sm text-muted-foreground">{step}</p>
+                      {i < sequence.length - 1 && (
+                        <div className="w-px flex-1 bg-[rgba(148,163,184,0.2)] min-h-[20px]" />
+                      )}
+                    </div>
+                    <div className="pb-5 pt-0.5 flex-1">
+                      <p className="text-xs font-medium uppercase tracking-wide text-[#64748B]">Phase {i + 1}</p>
+                      <p className="text-sm font-medium text-[#F8FAFC] mt-0.5">{step}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="hidden lg:block rounded-lg border border-[rgba(148,163,184,0.12)] bg-[rgba(5,7,10,0.5)] p-4">
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-[#64748B] mb-3">Gantt preview</p>
+                <div className="space-y-2">
+                  {sequence.map((step, i) => (
+                    <div key={i} className="flex items-center gap-2">
+                      <span className="text-[9px] text-[#64748B] w-4 shrink-0">{i + 1}</span>
+                      <div className="flex-1 h-5 rounded bg-[rgba(148,163,184,0.08)] overflow-hidden">
+                        <div
+                          className="h-full rounded bg-gradient-to-r from-[#3B82F6] to-[#22D3EE] opacity-80"
+                          style={{ width: `${Math.min(95, 35 + (i + 1) * (55 / Math.max(sequence.length, 1)))}%` }}
+                          title={step}
+                        />
                       </div>
                     </div>
                   ))}
                 </div>
-              </CardContent>
-            </Card>
+              </div>
+            </div>
+          </GlassCard>
 
-            {design.required_permissions.length > 0 && (
-              <Card>
-                <CardHeader>
-                  <CardTitle>Required Permissions & Surveys</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <ul className="space-y-2">
-                    {design.required_permissions.map((p, i) => (
-                      <li key={i} className="text-sm text-muted-foreground flex items-start gap-2">
-                        <span className="text-accent">•</span>
-                        {p}
-                      </li>
-                    ))}
-                  </ul>
-                </CardContent>
-              </Card>
-            )}
-          </>
-        )}
-      </div>
+          {design.required_permissions.length > 0 && (
+            <GlassCard className="p-4 sm:p-5">
+              <h3 className="text-sm font-semibold text-[#F8FAFC] mb-3">Required permissions & surveys</h3>
+              <ul className="space-y-2">
+                {design.required_permissions.map((p, i) => (
+                  <li key={i} className="flex items-start gap-2 text-sm text-[#94A3B8]">
+                    <CheckCircle2 className="h-4 w-4 shrink-0 text-[#22D3EE] mt-0.5" />
+                    {p}
+                  </li>
+                ))}
+              </ul>
+            </GlassCard>
+          )}
 
-      <MobileBottomNav projectId={projectId} />
-
-      <BottomSummaryBar stats={summaryStats} />
-    </div>
+          <p className="text-[11px] leading-relaxed text-[#64748B] border-l-2 border-[rgba(245,158,11,0.4)] pl-3">
+            Timeline excludes approval delays, monsoon impact, land acquisition, and utility shifting unless explicitly modeled.
+          </p>
+        </>
+      )}
+    </ProjectResultShell>
   );
 }

@@ -1,78 +1,87 @@
 # Deployment Guide — GeoAI 3D Construction Planner
 
+Production target: **Render** (API + worker + Postgres + Redis) + **Netlify** (Next.js frontend).
+
+---
+
 ## Architecture
 
-| Component | Recommended host | Notes |
-|-----------|------------------|-------|
-| Frontend (Next.js) | **Netlify** | Static/SSR via `@netlify/plugin-nextjs` |
-| Backend (FastAPI) | **Render** | Web service, binds `0.0.0.0:$PORT` |
-| Database | **Render Postgres** or external PostGIS | Required for full survey mode |
-| Redis | **Render Key Value** or Upstash | Optional; in-process fallback in dev |
-| Object storage | **S3-compatible** (AWS S3, MinIO, R2) | Optional; local FS not durable on Render |
+| Component | Host | Notes |
+|-----------|------|-------|
+| Frontend | **Netlify** | `@netlify/plugin-nextjs`; no backend required at build time |
+| API | **Render web** (`geoai-api`) | FastAPI, `/health`, binds `0.0.0.0:$PORT` |
+| Worker | **Render worker** (`geoai-worker`) | Arq — runs design generation jobs |
+| Database | **Render Postgres** | PostGIS extension required for full survey mode |
+| Redis | **Render Key Value** | Job status, rate limits, Arq queue |
+| Object storage | **S3 / R2 / MinIO** | **Required** for durable GLB/PDF on Render (ephemeral disk) |
+
+Blueprint: [`render.yaml`](./render.yaml)  
+Local stack: [`docker-compose.yml`](./docker-compose.yml)
 
 ---
 
-## Deployment checklist
+## Production environment checklist
 
-Use this order for first production deploy:
+### Backend (Render — shared by API + worker)
 
-1. **Push code to GitHub** (ensure `.env` is not tracked — see `.gitignore`)
-2. **Create Render PostgreSQL** (or external PostGIS) and run `CREATE EXTENSION IF NOT EXISTS postgis;`
-3. **Create Render web service** from `render.yaml` or manually (`rootDir: backend`)
-4. **Set backend environment variables** (see table below)
-5. **Deploy backend** — build runs `alembic upgrade head`
-6. **Test backend**
-   - `GET https://your-api.onrender.com/health`
-   - `GET https://your-api.onrender.com/api/health`
-   - `GET https://your-api.onrender.com/api/system/status`
-   - `GET https://your-api.onrender.com/api/projects/demo`
-7. **Create Netlify site** linked to repo (`base: frontend`)
-8. **Set frontend env:** `NEXT_PUBLIC_API_URL=https://your-api.onrender.com`
-9. **Deploy frontend**
-10. **Set backend** `NEXT_PUBLIC_APP_URL=https://your-site.netlify.app` (CORS)
-11. **Redeploy backend** if CORS origin was added after first deploy
-12. Open **dashboard** on Netlify URL
-13. Run full **demo path** (see `MANUAL_QA.md`)
-14. Test **PDF / CSV / GeoJSON** exports from Report page
+| Variable | Required | Notes |
+|----------|----------|-------|
+| `DATABASE_URL` | **Yes** | From Render Postgres (`geoai-postgres`) |
+| `REDIS_URL` | **Yes** | From Render Key Value (`geoai-redis`) |
+| `APP_SECRET` | **Yes** | Auto-generated in Blueprint — rotate if leaked |
+| `ENVIRONMENT` | **Yes** | `production` |
+| `AUTH_REQUIRE_JWT` | **Yes** | `true` |
+| `NEXT_PUBLIC_APP_URL` | **Yes** | Netlify site URL (CORS) |
+| `GENERATION_JOB_TIMEOUT_SECONDS` | Recommended | `300` |
+| `USE_ARQ_WORKER` | **Yes** | `true` in production |
+| `USAGE_LIMITS_ENABLED` | Optional | `true` (default) |
+| `RATE_LIMITING_ENABLED` | Optional | `true` (default) |
+| `S3_ENDPOINT` | **Yes*** | *Required for persistent models/exports |
+| `S3_BUCKET` | **Yes*** | |
+| `S3_ACCESS_KEY` | **Yes*** | |
+| `S3_SECRET_KEY` | **Yes*** | |
+| `AI_PROVIDER` | Optional | `mock` / `openai` / `anthropic` / `ollama` |
+| `OPENAI_API_KEY` | Optional | |
+| `ANTHROPIC_API_KEY` | Optional | |
+| `GOOGLE_MAPS_API_KEY` | Optional | OSM/Esri fallback when blank |
+| `MAPBOX_TOKEN` | Optional | |
+| `CESIUM_ION_TOKEN` | Optional | 3D tiles |
 
----
+### Frontend (Netlify)
 
-## Frontend — Netlify
+| Variable | Required | Notes |
+|----------|----------|-------|
+| `NEXT_PUBLIC_API_URL` | **Yes** | Render API URL, e.g. `https://geoai-api.onrender.com` |
+| `NEXT_PUBLIC_AUTH_REQUIRE_JWT` | **Yes** | `true` in production |
+| `NEXT_PUBLIC_MAP_ENGINE` | Optional | `maplibre` (default) or `cesium` |
+| `NEXT_PUBLIC_MAPBOX_TOKEN` | Optional | Browser-exposed; restrict by referrer |
+| `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` | Optional | Browser-exposed; restrict by referrer |
 
-Config: `netlify.toml`
-
-```bash
-cd frontend
-npm ci
-npm run build
-```
-
-### Required environment variables (Netlify UI)
-
-| Variable | Example | Required |
-|----------|---------|----------|
-| `NEXT_PUBLIC_API_URL` | `https://geoai-api.onrender.com` | **Yes** |
-
-### Optional
-
-| Variable | Example |
-|----------|---------|
-| `NEXT_PUBLIC_APP_URL` | `https://your-site.netlify.app` |
-
-**Never** set OpenAI, Anthropic, Gemini, Mapbox, Cesium Ion, Google Maps, database, or storage secrets on Netlify.
-
-### Deploy with CLI
-
-```bash
-npx netlify link
-npx netlify deploy --prod
-```
+**Never** put database URLs, `APP_SECRET`, AI keys, or S3 secrets in Netlify.
 
 ---
 
-## Backend — Render
+## Deploy backend (Render)
 
-Config: `render.yaml` (Blueprint)
+### Option A — Blueprint (recommended)
+
+1. Push repo to GitHub.
+2. Render Dashboard → **New** → **Blueprint** → connect repo.
+3. Review services created from `render.yaml`:
+   - `geoai-postgres` (database)
+   - `geoai-redis` (Key Value)
+   - `geoai-api` (web)
+   - `geoai-worker` (worker)
+4. Set **`NEXT_PUBLIC_APP_URL`** on the `geoai-backend` env group to your Netlify URL.
+5. Set **S3** credentials (see [Object storage](#object-storage-s3--minio)).
+6. Deploy. Build runs `alembic upgrade head` on API and worker.
+7. Verify:
+   ```bash
+   curl https://YOUR-API.onrender.com/health
+   curl https://YOUR-API.onrender.com/api/system/status
+   ```
+
+### Option B — Manual web service
 
 | Setting | Value |
 |---------|-------|
@@ -81,142 +90,252 @@ Config: `render.yaml` (Blueprint)
 | Start | `uvicorn app.main:app --host 0.0.0.0 --port $PORT` |
 | Health check | `/health` |
 
-### Required environment variables (Render)
-
-```env
-DATABASE_URL=postgresql://...
-APP_SECRET=<generate-strong-secret>
-ENVIRONMENT=production
-NEXT_PUBLIC_APP_URL=https://your-site.netlify.app
+Add a separate **Background Worker** with start command:
+```bash
+arq app.workers.tasks.WorkerSettings
 ```
-
-| Variable | Required | Notes |
-|----------|----------|-------|
-| `DATABASE_URL` | **Yes** | PostgreSQL with PostGIS |
-| `APP_SECRET` | **Yes** | JWT signing — never use `dev-secret-change-me` |
-| `ENVIRONMENT` | Recommended | `production` |
-| `NEXT_PUBLIC_APP_URL` | **Yes** | Frontend origin for CORS |
-
-> **Note:** This project uses `APP_SECRET`, not `SECRET_KEY`.
-
-### Optional environment variables (Render)
-
-```env
-REDIS_URL=
-S3_ENDPOINT=
-S3_BUCKET=
-S3_ACCESS_KEY=
-S3_SECRET_KEY=
-OPENAI_API_KEY=
-ANTHROPIC_API_KEY=
-GEMINI_API_KEY=
-MAPBOX_TOKEN=
-CESIUM_ION_TOKEN=
-GOOGLE_MAPS_API_KEY=
-AUTH_REQUIRE_JWT=false
-```
-
-| Variable | When needed |
-|----------|-------------|
-| `REDIS_URL` | Async design jobs at scale |
-| `S3_*` | Persistent GLB/PDF uploads on Render |
-| AI keys | Real LLM design (mock when blank) |
-| Map keys | HD imagery / 3D tiles (OSM/Esri fallback when blank) |
-| `AUTH_REQUIRE_JWT` | Set `true` for locked-down production |
-
-Render filesystem is **ephemeral** — use S3 + Postgres, not local disk.
-
-### API endpoints to verify after deploy
-
-| Endpoint | Expected |
-|----------|----------|
-| `GET /health` | `{ "status": "ok" }` |
-| `GET /api/health` | Same as above |
-| `GET /api/system/status` | Database mode, PostGIS flag, providers |
-| `GET /api/projects/demo` | Demo Flyover with boundary |
 
 ---
 
-## PostGIS on Render
+## Deploy frontend (Netlify)
 
-1. Create PostgreSQL instance.
-2. Connect and run: `CREATE EXTENSION IF NOT EXISTS postgis;`
-3. Set `DATABASE_URL` on the API service.
-4. Migrations run on deploy via `alembic upgrade head`.
-5. Confirm: `GET /api/system/status` → `"postgis_available": true`
-
----
-
-## Docker Compose (local / staging)
+Config: [`netlify.toml`](./netlify.toml)
 
 ```bash
+cd frontend
+npm ci
+npm run build   # uses NEXT_PUBLIC_* only — no local backend needed
+```
+
+### Netlify CLI
+
+```bash
+npx netlify link
+npx netlify env:set NEXT_PUBLIC_API_URL https://YOUR-API.onrender.com
+npx netlify env:set NEXT_PUBLIC_AUTH_REQUIRE_JWT true
+npx netlify deploy --prod
+```
+
+After frontend deploy, set backend `NEXT_PUBLIC_APP_URL` to the Netlify URL and redeploy API (CORS).
+
+---
+
+## Production smoke test
+
+After both services are live:
+
+```bash
+cd backend
+pip install -r requirements.txt
+python scripts/production_smoke.py --base-url https://YOUR-API.onrender.com
+```
+
+The script checks:
+
+- `/health`, `/api/system/status`
+- `X-Request-ID` on responses
+- Production readiness flags (`deployment_ready`, auth, Redis/worker)
+- Auth-required behavior (401 when JWT required)
+- File access protection (401/403 for anonymous GLB fetch in prod mode)
+- Register + login + `/api/auth/me`
+- Create project with minimal boundary
+- Start `fast_preview` generation
+- Poll job until preview/completed/failed (includes job diagnostics when present)
+- List scenarios, scenario detail, scenario compare (when 2+ scenarios exist)
+- Usage summary
+- Model URL when available
+
+Exit code **0** = all checks passed. Safe diagnostics only (no secrets printed).
+
+See also **[STAGING_CHECKLIST.md](./STAGING_CHECKLIST.md)** for manual pre-launch verification.
+
+---
+
+## Error tracking (optional Sentry)
+
+Sentry is **optional** — the app runs normally without it.
+
+### Backend
+
+Set on Render (API + worker env group):
+
+| Variable | Notes |
+|----------|-------|
+| `SENTRY_DSN` | From Sentry project settings |
+| `SENTRY_ENVIRONMENT` | e.g. `staging`, `production` |
+| `SENTRY_TRACES_SAMPLE_RATE` | e.g. `0.1` |
+
+When `SENTRY_DSN` is set, the API initializes `sentry-sdk` at startup. Verify via `GET /api/system/status` → `observability.sentry_enabled`.
+
+### Frontend
+
+Set `NEXT_PUBLIC_SENTRY_DSN` in Netlify. The repo includes a lightweight hook in `frontend/lib/observability.ts`; install `@sentry/nextjs` and wire `Sentry.init` there when you want client-side error forwarding.
+
+---
+
+## Local production-like mode
+
+Simulate production constraints locally:
+
+```bash
+# Terminal 1 — infrastructure
 docker compose up -d
-cd backend && alembic upgrade head
+
+# Terminal 2 — API
+cd backend
+cp ../.env.example ../.env
+# Edit .env:
+#   ENVIRONMENT=production
+#   AUTH_REQUIRE_JWT=true
+#   DATABASE_URL=postgresql+psycopg2://geoai:geoai@localhost:5432/geoai
+#   REDIS_URL=redis://localhost:6379/0
+#   USE_ARQ_WORKER=true
+#   APP_SECRET=local-prod-test-secret-not-for-deploy
+#   NEXT_PUBLIC_APP_URL=http://localhost:3000
+alembic upgrade head
+uvicorn app.main:app --host 0.0.0.0 --port 8000
+
+# Terminal 3 — worker
+cd backend
+arq app.workers.tasks.WorkerSettings
+
+# Terminal 4 — frontend
+cd frontend
+# frontend/.env.local:
+#   NEXT_PUBLIC_API_URL=http://localhost:8000
+#   NEXT_PUBLIC_AUTH_REQUIRE_JWT=true
+npm run dev
 ```
 
-Services: PostGIS (`5432`), Redis (`6379`), MinIO (`9000`/`9001`).
-
-Copy `.env.example` → `.env` and point at local services.
-
----
-
-## Security notes
-
-### Safe in frontend (Netlify)
-
-- `NEXT_PUBLIC_API_URL`
-- `NEXT_PUBLIC_APP_URL`
-
-### Backend only
-
-- Database URLs, `APP_SECRET`, AI keys, S3 credentials
-- Mapbox token (satellite proxied via `/api/tiles/satellite/...`)
-
-### Browser-delivered map keys (intentional)
-
-`/api/geocode/map-runtime-config` may return **Cesium Ion** and **Google Maps** keys for 3D tiles in the browser. These are not AI or storage secrets. Restrict them by **HTTP referrer / domain** in provider dashboards.
-
-AI provider keys are **never** sent to the frontend.
-
----
-
-## CI checks before deploy
+Smoke against local API:
 
 ```bash
-cd backend && pip install -r requirements.txt && pytest
-cd frontend && npm ci && npm run lint && npm run build
+python backend/scripts/production_smoke.py --base-url http://localhost:8000
 ```
 
 ---
 
-## Demo / production modes
+## Create first admin user
 
-| Mode | Database | Survey | AI |
-|------|----------|--------|-----|
-| Local demo | SQLite | Limited | Mock |
-| Staging | PostGIS | Full | Optional keys |
-| Production | PostGIS | Full | Real providers |
+1. Register via the app or API:
+   ```bash
+   curl -X POST https://YOUR-API/api/auth/register \
+     -H "Content-Type: application/json" \
+     -d '{"name":"Admin","email":"you@company.com","password":"YourSecurePass1"}'
+   ```
+2. Promote to admin (from repo, with `DATABASE_URL` set):
+   ```bash
+   cd backend
+   python scripts/create_admin.py you@company.com
+   ```
+3. Log in again — `/api/auth/me` should show `"role": "admin"`, `"plan": "admin"`.
+
+Alternatively, SQL on Postgres:
+```sql
+UPDATE users SET role = 'admin', plan = 'admin' WHERE email = 'you@company.com';
+```
+
+---
+
+## Rotate API keys
+
+1. Generate new key in provider dashboard (OpenAI, Mapbox, S3, etc.).
+2. Update Render env vars on **`geoai-backend`** group (applies to API + worker).
+3. Redeploy API and worker (or use Render “Save and deploy”).
+4. For browser map keys, update Netlify `NEXT_PUBLIC_*` vars and redeploy frontend.
+5. Revoke old keys after verifying `/api/system/status` and maps.
+
+Rotate `APP_SECRET` only with a plan to invalidate all JWTs (all users must log in again).
+
+---
+
+## Object storage (S3 / MinIO)
+
+Render’s filesystem is **ephemeral**. Without S3:
+
+- GLB/PDF files are lost on restart
+- `/api/system/status` reports `local_storage` as **critical** in production
+
+**MinIO locally** (docker-compose):
+
+```env
+S3_ENDPOINT=http://localhost:9000
+S3_BUCKET=geoai-files
+S3_ACCESS_KEY=geoai
+S3_SECRET_KEY=your-minio-secret
+```
+
+**Production:** use AWS S3, Cloudflare R2, or similar. Set all four `S3_*` vars on Render.
+
+---
+
+## Migrations & startup
+
+| Step | When |
+|------|------|
+| `alembic upgrade head` | Render **build** (API + worker) |
+| `init_db()` | API **startup** — seeds rates/templates/demo, creates missing tables |
+| Startup warnings | Logged via `production_readiness()` — check Render logs |
+| `/api/system/status` | `production.deployment_ready`, `critical_count`, warnings |
+
+SQLite is allowed for local dev only. Production with SQLite triggers a **critical** warning.
+
+---
+
+## CI/CD
+
+GitHub Actions: [`.github/workflows/ci.yml`](./.github/workflows/ci.yml)
+
+On push/PR to `main`:
+
+- Backend: `pytest`
+- Frontend: `npm run lint`, `npm test`, `npm run build`
+
+---
+
+## Troubleshooting
+
+| Symptom | Likely cause | Fix |
+|---------|--------------|-----|
+| **401 on all API calls** | JWT required but no token | Set `NEXT_PUBLIC_AUTH_REQUIRE_JWT=true` on Netlify; log in; check `Authorization` header |
+| **401 after deploy** | Wrong `APP_SECRET` or expired token | Log in again; verify same secret on API/worker |
+| **CORS errors** | Frontend URL not allowed | Set `NEXT_PUBLIC_APP_URL` on backend to exact Netlify URL; redeploy API |
+| **Model not showing** | Job failed or GLB missing | Check job status `/api/jobs/{id}`; verify worker running; check S3 config |
+| **GLB 404** | Ephemeral disk or auth | Use S3; ensure logged in; files served via `/files/...` with JWT |
+| **Job stuck queued** | Worker not running or no Redis | Enable `geoai-worker`; verify `REDIS_URL`; `USE_ARQ_WORKER=true` |
+| **Redis unavailable** | Wrong URL or service down | Check Render Key Value; `GET /api/system/status` → `redis_available` |
+| **Map tiles missing** | No Mapbox/Google token | Add keys or use OSM fallback; restrict public keys by domain |
+| **429 usage limit** | Free plan caps | Settings → usage card; wait for daily reset or promote to `pro`/`admin` |
+| **PostGIS / survey disabled** | SQLite or extension missing | Use Render Postgres; run `CREATE EXTENSION postgis;` |
+| **deployment_ready: false** | Critical config warnings | Fix items in `/api/system/status` → `production.warnings` |
 
 ---
 
 ## Security checklist
 
-- [ ] `APP_SECRET` is unique per environment
-- [ ] `.env` not committed (check `git check-ignore .env`)
-- [ ] No real API keys in repo history
-- [ ] No AI/storage keys in frontend Netlify env
-- [ ] Map keys domain-restricted if exposed to browser
-- [ ] `AUTH_REQUIRE_JWT=true` when not demoing publicly
-- [ ] Database and Redis not publicly exposed without auth
+- [ ] `APP_SECRET` unique per environment (not `dev-secret-change-me`)
+- [ ] `AUTH_REQUIRE_JWT=true` in production
+- [ ] S3 configured for file persistence
+- [ ] Redis configured for jobs + rate limits
+- [ ] Worker service running alongside API
+- [ ] No secrets in frontend env or git
+- [ ] Map keys referrer-restricted
+- [ ] First admin created intentionally (not default dev user)
+
+---
+
+## Local dev quickstart
+
+See **[LOCAL_SETUP.md](./LOCAL_SETUP.md)** for SQLite/mock mode without Docker.
 
 ---
 
 ## Manual QA
 
-See **[MANUAL_QA.md](./MANUAL_QA.md)** for page-by-page and demo-flow checklists.
+See **[MANUAL_QA.md](./MANUAL_QA.md)** for browser checklists.
 
 ---
 
 ## Disclaimer
 
-Deployed outputs remain **preliminary planning only**. Disclaimers are built into the UI and PDF exports.
+All outputs remain **preliminary planning only** — not construction-ready drawings or approvals.

@@ -5,6 +5,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.api.routes.projects import get_owned_project
+from app.core.project_catalog import project_type_family
 from app.core.disclaimer import DISCLAIMER
 from app.core.security import get_current_user_id
 from app.db.models import SiteAnalysis
@@ -21,8 +22,9 @@ class SiteSuggestionRequest(BaseModel):
 
 def _client_style_suggestions(lng: float, lat: float, project_type: str, roads: list) -> list[dict]:
     """Mirror frontend heuristics for API parity."""
+    family = project_type_family(project_type)
     suggestions: list[dict] = []
-    if project_type == "building":
+    if family == "building":
         presets = [
             (60, 45, "Compact plot", "Mid-rise massing (~2,700 m²)"),
             (100, 80, "Standard campus", "Institutional / commercial block"),
@@ -41,8 +43,8 @@ def _client_style_suggestions(lng: float, lat: float, project_type: str, roads: 
                     "geometry": {"type": "Polygon", "coordinates": [ring]},
                 }
             )
-    elif project_type in ("flyover", "road", "pipeline"):
-        lengths = [400, 600, 800] if project_type != "pipeline" else [300, 500, 700]
+    elif family in ("flyover", "road", "pipeline"):
+        lengths = [400, 600, 800] if family != "pipeline" else [300, 500, 700]
         for i, length in enumerate(lengths):
             line = _line_from_center(lng, lat, length, 90 if i % 2 else 0)
             suggestions.append(

@@ -1,6 +1,7 @@
 "use client";
 
 import { AlertTriangle, MapPin, MousePointerClick, RefreshCw } from "lucide-react";
+import { useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { CollapsibleSection } from "@/components/ui/collapsible-section";
 import { cn } from "@/lib/utils";
@@ -22,6 +23,8 @@ interface Props {
   compact?: boolean;
   /** Slim sidebar: refresh + list only (no duplicate map-pick actions). */
   sidebar?: boolean;
+  /** Load suggestions at project center when the panel mounts. */
+  autoLoadOnMount?: boolean;
 }
 
 async function fetchSuggestions(
@@ -56,6 +59,7 @@ export default function SiteSuggestionsPanel({
   onApplyAlignment,
   compact,
   sidebar,
+  autoLoadOnMount,
 }: Props) {
   const {
     activeTool,
@@ -70,11 +74,28 @@ export default function SiteSuggestionsPanel({
     const list = await fetchSuggestions(projectId, centerLng, centerLat, projectType, roadFeatures);
     setSiteSuggestions(list);
     setHighlightedSuggestionId(list[0]?.id ?? null);
-    toast("Site suggestions updated", {
-      description: `${list.length} options shown on map`,
-      variant: "success",
-    });
+    if (!autoLoadOnMount) {
+      toast("Site suggestions updated", {
+        description: `${list.length} options shown on map`,
+        variant: "success",
+      });
+    }
   };
+
+  useEffect(() => {
+    if (!autoLoadOnMount) return;
+    let cancelled = false;
+    void (async () => {
+      const list = await fetchSuggestions(projectId, centerLng, centerLat, projectType, roadFeatures);
+      if (cancelled) return;
+      setSiteSuggestions(list);
+      setHighlightedSuggestionId(list[0]?.id ?? null);
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoLoadOnMount, centerLng, centerLat, projectType, projectId]);
 
   const apply = async (s: SiteSuggestion) => {
     if (s.building_clashes?.length) {
@@ -94,7 +115,9 @@ export default function SiteSuggestionsPanel({
     <div className={cn("space-y-1 pr-0.5", sidebar ? "min-h-0 flex-1 overflow-y-auto overscroll-contain" : "max-h-[240px] overflow-y-auto")}>
       {displayList.length === 0 ? (
         <p className="text-[10px] text-muted-foreground px-1 py-2 leading-snug">
-          Use <span className="text-foreground/80">Smart Suggest</span> in Drawing Tools, then click the map.
+          {sidebar
+            ? "No suggestions yet — use Suggest tool and click the map, or tap Refresh."
+            : "Use Smart Suggest in Drawing Tools, then click the map."}
         </p>
       ) : (
         displayList.map((s) => (

@@ -1,11 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { ChevronDown, Loader2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
+import { SidebarMetricChip, SidebarStatusCard } from "@/components/layout/SidebarStatusCard";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
-import { CollapsibleSection } from "@/components/ui/collapsible-section";
 import { api, uploadSurveyFile } from "@/lib/api";
 import type {
   EngineeringLayer,
@@ -14,7 +14,6 @@ import type {
   SurveyStatus,
   ValidationReport,
 } from "@/lib/types";
-import { cn } from "@/lib/utils";
 import AccuracyBadge from "./AccuracyBadge";
 import EngineeringLayerPanel from "./EngineeringLayerPanel";
 import OffsetCorrectionTool from "./OffsetCorrectionTool";
@@ -40,7 +39,6 @@ export default function SurveyModePanel({ projectId, onStatusChange, onDataLoade
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
-  const [showValidation, setShowValidation] = useState(false);
 
   const refresh = useCallback(async () => {
     const [st, ly, ds, gp, adj] = await Promise.all([
@@ -105,7 +103,6 @@ export default function SurveyModePanel({ projectId, onStatusChange, onDataLoade
     try {
       const report = await api.post<ValidationReport>(`/api/projects/${projectId}/survey/validate`);
       setValidation(report);
-      setShowValidation(true);
       await refresh();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Validation failed");
@@ -115,33 +112,28 @@ export default function SurveyModePanel({ projectId, onStatusChange, onDataLoade
   };
 
   const activeAdjustment = validation?.gcp_adjustment ?? adjustment;
-  const failedChecks = validation?.checks.filter((c) => !c.passed) ?? [];
   const passedCount = validation ? validation.checks.filter((c) => c.passed).length : 0;
+  const failedChecks = validation?.checks.filter((c) => !c.passed) ?? [];
 
   if (loading && !status) {
     return (
-      <div className="flex items-center gap-2 text-[11px] text-muted-foreground py-1">
-        <Loader2 className="h-3 w-3 animate-spin" />
-        Loading survey…
-      </div>
+      <SidebarStatusCard title="Survey">
+        <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+          <Loader2 className="h-3 w-3 animate-spin" />
+          Loading…
+        </div>
+      </SidebarStatusCard>
     );
   }
 
   return (
-    <div className="space-y-2 text-sm">
-      <div className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2 min-w-0">
-          <span className="text-xs font-semibold truncate">Survey</span>
-          {status && <AccuracyBadge tier={status.accuracy_tier} compact />}
-        </div>
-        {status?.survey_mode_enabled && status.engineering_crs_epsg && (
-          <span className="text-[10px] text-muted-foreground shrink-0">EPSG:{status.engineering_crs_epsg}</span>
-        )}
-      </div>
-
+    <SidebarStatusCard
+      title="Survey"
+      trailing={status ? <AccuracyBadge tier={status.accuracy_tier} compact /> : null}
+    >
       {!status?.postgis_available && (
-        <p className="text-[10px] text-warning leading-snug">
-          Requires PostGIS — use Docker for full survey mode.
+        <p className="text-[10px] text-warning leading-snug rounded-md border border-warning/25 bg-warning/5 px-2 py-1">
+          PostGIS required — start Docker for full survey mode.
         </p>
       )}
 
@@ -150,113 +142,106 @@ export default function SurveyModePanel({ projectId, onStatusChange, onDataLoade
       {!status?.survey_mode_enabled ? (
         <Button
           size="sm"
-          className="w-full h-7 text-xs"
+          className="w-full h-8 text-xs"
           disabled={busy || !status?.postgis_available}
           onClick={enableSurveyMode}
         >
           Enable Survey Mode
         </Button>
       ) : (
-        <>
-          <p className="text-[10px] text-muted-foreground">
-            {layers.length} layer{layers.length === 1 ? "" : "s"}
-            {datasets.length > 0 && ` · ${datasets.length} dataset${datasets.length === 1 ? "" : "s"}`}
-            {gcps.length > 0 && ` · ${gcps.length} GCP${gcps.length === 1 ? "" : "s"}`}
-          </p>
+        <div className="space-y-2">
+          <div className="flex gap-1">
+            <SidebarMetricChip label="Layers" value={layers.length} />
+            <SidebarMetricChip label="Data" value={datasets.length} />
+            <SidebarMetricChip label="GCPs" value={gcps.length} />
+          </div>
+
+          {status.engineering_crs_epsg && (
+            <p className="text-[10px] text-muted-foreground">CRS EPSG:{status.engineering_crs_epsg}</p>
+          )}
 
           <SurveyLayerToggles compact />
 
-          <CollapsibleSection title="Import data" defaultOpen={false}>
-            <div className="space-y-2 px-1 pb-1">
+          <div className="space-y-1.5 rounded-md border border-border/50 bg-muted/10 p-2">
+            <p className="text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">Import</p>
+            <Select
+              value={importFormat}
+              onChange={(e) => setImportFormat(e.target.value)}
+              className="h-7 text-xs px-2 w-full"
+            >
+              <option value="geojson">GeoJSON</option>
+              <option value="shapefile">Shapefile (.zip)</option>
+              <option value="geotiff">GeoTIFF DEM/Ortho</option>
+              <option value="gcp_csv">GCP CSV</option>
+              <option value="las">LAS/LAZ</option>
+              <option value="dxf">DXF</option>
+            </Select>
+            {VECTOR_FORMATS.has(importFormat) && (
               <Select
-                value={importFormat}
-                onChange={(e) => setImportFormat(e.target.value)}
+                value={layerType}
+                onChange={(e) => setLayerType(e.target.value)}
                 className="h-7 text-xs px-2 w-full"
               >
-                <option value="geojson">GeoJSON</option>
-                <option value="shapefile">Shapefile (.zip)</option>
-                <option value="geotiff">GeoTIFF DEM/Ortho</option>
-                <option value="gcp_csv">GCP CSV</option>
-                <option value="las">LAS/LAZ</option>
-                <option value="dxf">DXF</option>
+                <option value="road_centerline">Road centerline</option>
+                <option value="pipeline_centerline">Pipeline centerline</option>
+                <option value="site_boundary">Site boundary</option>
+                <option value="building_footprint">Building footprint</option>
               </Select>
-              {VECTOR_FORMATS.has(importFormat) && (
-                <Select
-                  value={layerType}
-                  onChange={(e) => setLayerType(e.target.value)}
-                  className="h-7 text-xs px-2 w-full"
-                >
-                  <option value="road_centerline">Road centerline</option>
-                  <option value="pipeline_centerline">Pipeline centerline</option>
-                  <option value="site_boundary">Site boundary</option>
-                  <option value="building_footprint">Building footprint</option>
-                </Select>
-              )}
-              <Input
-                type="file"
-                className="h-7 text-[10px]"
-                disabled={busy}
-                onChange={(e) => {
-                  const f = e.target.files?.[0];
-                  if (f) void onImport(f);
-                }}
-              />
-            </div>
-          </CollapsibleSection>
+            )}
+            <Input
+              type="file"
+              className="h-7 text-[10px]"
+              disabled={busy}
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) void onImport(f);
+              }}
+            />
+          </div>
 
           {layers.length > 0 && (
-            <CollapsibleSection title={`Layers (${layers.length})`} defaultOpen={false}>
+            <div className="space-y-1">
+              <p className="text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">
+                Layers ({layers.length})
+              </p>
               <EngineeringLayerPanel layers={layers} compact />
-            </CollapsibleSection>
+            </div>
           )}
 
-          <CollapsibleSection title="GCP & checks" defaultOpen={false}>
-            <div className="space-y-2 px-1 pb-1">
-              {activeAdjustment && (
-                <OffsetCorrectionTool
-                  projectId={projectId}
-                  adjustment={activeAdjustment}
-                  onApplied={refresh}
-                  compact
-                />
-              )}
-              <Button
-                size="sm"
-                variant="outline"
-                className="w-full h-7 text-xs"
-                disabled={busy}
-                onClick={runValidation}
-              >
-                Run validation
-              </Button>
-              {validation && (
-                <div className="space-y-1">
-                  <button
-                    type="button"
-                    onClick={() => setShowValidation((v) => !v)}
-                    className="flex w-full items-center justify-between text-[10px] text-muted-foreground hover:text-foreground"
-                  >
-                    <span>
-                      {passedCount}/{validation.checks.length} checks passed
-                      {failedChecks.length > 0 && ` · ${failedChecks.length} issue${failedChecks.length === 1 ? "" : "s"}`}
-                    </span>
-                    <ChevronDown className={cn("h-3 w-3 transition-transform", showValidation && "rotate-180")} />
-                  </button>
-                  {showValidation && (
-                    <ul className="max-h-24 overflow-y-auto space-y-0.5 text-[10px]">
-                      {validation.checks.map((c) => (
-                        <li key={c.id} className={c.passed ? "text-muted-foreground" : "text-warning"}>
-                          {c.passed ? "✓" : "○"} {c.label}
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </div>
-              )}
+          {activeAdjustment && (
+            <OffsetCorrectionTool
+              projectId={projectId}
+              adjustment={activeAdjustment}
+              onApplied={refresh}
+              compact
+            />
+          )}
+
+          <Button
+            size="sm"
+            variant="outline"
+            className="w-full h-7 text-xs"
+            disabled={busy}
+            onClick={runValidation}
+          >
+            Run validation
+          </Button>
+
+          {validation && (
+            <div className="text-[10px] space-y-1 border-t border-border/50 pt-1.5">
+              <p className="text-muted-foreground">
+                {passedCount}/{validation.checks.length} checks passed
+                {failedChecks.length > 0 && ` · ${failedChecks.length} issues`}
+              </p>
+              {failedChecks.slice(0, 2).map((c) => (
+                <p key={c.id} className="text-warning line-clamp-2">
+                  {c.label}
+                </p>
+              ))}
             </div>
-          </CollapsibleSection>
-        </>
+          )}
+        </div>
       )}
-    </div>
+    </SidebarStatusCard>
   );
 }

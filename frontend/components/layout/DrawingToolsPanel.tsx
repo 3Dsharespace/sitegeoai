@@ -161,6 +161,7 @@ function PanelSection({
 export default function DrawingToolsPanel({
   compact,
   iconOnly,
+  hidePrimaryTools,
   projectId,
   projectType = "flyover",
   boundary,
@@ -175,6 +176,8 @@ export default function DrawingToolsPanel({
 }: {
   compact?: boolean;
   iconOnly?: boolean;
+  /** When true, Select/Define Site/Measure render in the header toolbar instead. */
+  hidePrimaryTools?: boolean;
   projectId?: number;
   projectType?: string;
   boundary?: GeoJSONGeometry | null;
@@ -238,6 +241,8 @@ export default function DrawingToolsPanel({
 
   return (
     <div className={cn("space-y-3", (compact || iconOnly) && "space-y-2")}>
+      {!hidePrimaryTools && (
+        <>
       <PanelSection title="Select & Suggest" iconOnly={iconOnly}>
         <ToolGrid iconOnly={iconOnly}>
           <ToolButton
@@ -542,6 +547,8 @@ export default function DrawingToolsPanel({
           </div>
         )}
       </PanelSection>
+        </>
+      )}
 
       {!compact && !iconOnly && (
         <CollapsibleSection title="Infrastructure" defaultOpen={false}>
@@ -585,7 +592,6 @@ export default function DrawingToolsPanel({
       )}
 
       {projectId != null && (
-        <CollapsibleSection title="Survey Mode" defaultOpen={false}>
           <SurveyModePanel
             projectId={projectId}
             onStatusChange={(st) => {
@@ -616,7 +622,6 @@ export default function DrawingToolsPanel({
               );
             }}
           />
-        </CollapsibleSection>
       )}
     </div>
   );

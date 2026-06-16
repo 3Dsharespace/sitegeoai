@@ -72,7 +72,27 @@ export default function SystemStatusPanel() {
           </div>
           <div>
             <dt className="text-muted-foreground text-xs">AI provider</dt>
-            <dd>{status.ai.active_provider}{status.ai.mock_mode ? " (mock/demo)" : ""}</dd>
+            <dd>
+              {status.ai.active_provider}
+              {status.ai.mock_mode ? " (mock/demo)" : ""}
+              {status.ai.configured_provider ? ` · configured: ${status.ai.configured_provider}` : ""}
+            </dd>
+            {status.ai.gemini_configured && status.ai.gemini_implemented === false && (
+              <p className="text-xs text-amber-600 mt-1">Gemini key present but provider not implemented yet.</p>
+            )}
+          </div>
+          <div>
+            <dt className="text-muted-foreground text-xs">Ollama</dt>
+            <dd>
+              {status.ai.ollama.available ? (
+                <>
+                  Active
+                  {status.ai.ollama.model_ready ? ` · ${status.ai.ollama.model}` : " · model not pulled"}
+                </>
+              ) : (
+                <>Offline · {status.ai.ollama.base_url}</>
+              )}
+            </dd>
           </div>
           <div>
             <dt className="text-muted-foreground text-xs">Maps</dt>
@@ -86,6 +106,20 @@ export default function SystemStatusPanel() {
             <dt className="text-muted-foreground text-xs">PostGIS</dt>
             <dd>{status.postgis_available ? "Active" : "Not available (SQLite fallback)"}</dd>
           </div>
+          {status.observability && (
+            <div className="sm:col-span-2">
+              <dt className="text-muted-foreground text-xs">Observability</dt>
+              <dd className="flex flex-wrap gap-2 mt-1">
+                <Badge variant="outline">Request ID: {status.observability.request_id_header}</Badge>
+                <Badge variant={status.observability.structured_request_logging ? "success" : "secondary"}>
+                  Structured logs
+                </Badge>
+                <Badge variant={status.observability.sentry_enabled ? "success" : "secondary"}>
+                  Sentry {status.observability.sentry_enabled ? "active" : status.observability.sentry_configured ? "configured" : "off"}
+                </Badge>
+              </dd>
+            </div>
+          )}
         </dl>
         <p className="text-[11px] text-muted-foreground border-l-2 border-primary pl-2">{status.disclaimer}</p>
       </CardContent>

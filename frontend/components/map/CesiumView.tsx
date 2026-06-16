@@ -1,23 +1,38 @@
 "use client";
 
 import {
+  applyGlobeTranslucency,
+  cesiumDevLog,
   corridorRing,
   createElevationTerrain,
-  DEFAULT_TERRAIN_EXAGGERATION,
+  createFlatTerrain,
+  buildDesignModelMatrix,
+  designModelGroundHeightM,
+  resetGlobeTranslucency,
+  resetImageryAlpha,
   estimateBuildingHeight,
   objectInfoFromFeature,
   roadWidthM,
   type Scene3DLayerKey,
 } from "@/lib/cesium-scene";
+import {
+  createPhotorealisticTileState,
+  destroyPhotorealisticTiles,
+  setPhotorealisticTilesVisible,
+  syncPhotorealisticTiles,
+  type PhotorealisticTileState,
+} from "@/lib/cesium-photorealistic-tiles";
 import { formatDistanceForUnit, haversineM, lineLengthM } from "@/lib/geo";
 import {
+  basemapFor3d,
   createCesiumBasemapProvider,
   fetchMapRuntimeConfig,
   fetchTileProviders,
   type MapBasemap,
 } from "@/lib/map-imagery";
 import { MAP_COLORS } from "@/lib/map-colors";
-import { alignmentBearing, modelLayerVisibility } from "@/lib/project-workflow";
+import { designModelAnchor, alignmentBearing, modelLayerVisibility } from "@/lib/project-workflow";
+import { applyDesignMeshVisibilityWhenReady } from "@/lib/design-mesh-layers";
 import type { GeoJSONFeature, GeoJSONGeometry } from "@/lib/types";
 import { useProjectStore } from "@/stores/projectStore";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -35,7 +50,6 @@ interface CesiumViewProps {
   surveyGcpFeatures?: GeoJSONFeature[];
   surveyMode?: boolean;
   disableVendor3DTiles?: boolean;
-  terrainExaggeration?: number;
   basemap?: MapBasemap;
 }
 
@@ -77,8 +91,7 @@ export default function CesiumView({
   surveyGcpFeatures = [],
   surveyMode = false,
   disableVendor3DTiles = false,
-  terrainExaggeration = DEFAULT_TERRAIN_EXAGGERATION,
-  basemap = "terrain",
+  basemap = "satellite",
 }: CesiumViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -87,12 +100,12 @@ export default function CesiumView({
   const cesiumRef = useRef<any>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const dataSourcesRef = useRef<Map<string, any>>(new Map());
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const tilesetRef = useRef<any>(null);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const googleTilesetRef = useRef<any>(null);
+  const photorealisticTilesRef = useRef<PhotorealisticTileState>(createPhotorealisticTileState());
+  const terrainModeRef = useRef<"flat" | "elevation">("elevation");
   const measurePointsRef = useRef<[number, number, number][]>([]);
   const handlerRef = useRef<CesiumInputHandler | null>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const modelsRef = useRef<{ main: any; excav: any }>({ main: null, excav: null });
   const basemapRef = useRef(basemap);
   const mapRuntimeRef = useRef<{ cesium_ion_token: string | null; google_maps_api_key: string | null }>({
     cesium_ion_token: null,
@@ -101,6 +114,8 @@ export default function CesiumView({
 
   const [error, setError] = useState("");
   const [loaded, setLoaded] = useState(false);
+  /** Bumped after terrain provider switches so clamped entities re-bind to the globe. */
+  const [terrainEpoch, setTerrainEpoch] = useState(0);
 
   const layers = useProjectStore((s) => s.layers);
   const surveyLayers = useProjectStore((s) => s.surveyLayers);
@@ -110,6 +125,8 @@ export default function CesiumView({
   const undergroundView = useProjectStore((s) => s.undergroundView);
   const scene3dMeasureTool = useProjectStore((s) => s.scene3dMeasureTool);
   const measureUnit = useProjectStore((s) => s.measureUnit);
+  const designMeshCatalog = useProjectStore((s) => s.designMeshCatalog);
+  const designMeshVisibility = useProjectStore((s) => s.designMeshVisibility);
 
   const centerLng = center[0];
   const centerLat = center[1];
@@ -140,6 +157,10 @@ export default function CesiumView({
     dataSourcesRef.current.get(key)?.entities.removeAll();
   };
 
+  /** Photorealistic Ion/Google 3D tiles — gated by the "3D city tiles" layer. */
+  const vendorPhotorealisticTilesEnabled = () =>
+    !disableVendor3DTiles && useProjectStore.getState().layers.tiles3d;
+
   // Init viewer
   useEffect(() => {
     const dataSources = dataSourcesRef.current;
@@ -166,9 +187,10 @@ export default function CesiumView({
         const token = runtime.cesium_ion_token ?? undefined;
         if (token) Cesium.Ion.defaultAccessToken = token;
 
+        const resolvedBasemap = basemapFor3d(basemapRef.current);
         const imageryProvider = await createCesiumBasemapProvider(
           Cesium,
-          basemapRef.current,
+          resolvedBasemap,
           providers,
         );
         if (cancelled || !containerRef.current || viewerRef.current) return;
@@ -183,12 +205,12 @@ export default function CesiumView({
           navigationHelpButton: false,
           infoBox: false,
           selectionIndicator: true,
-          terrain: createElevationTerrain(Cesium, token),
+          terrain: createFlatTerrain(Cesium),
         });
-        viewer.scene.requestRenderMode = true;
+        viewer.scene.requestRenderMode = false;
         viewer.scene.maximumRenderTimeChange = Infinity;
         viewer.scene.globe.depthTestAgainstTerrain = true;
-        viewer.scene.globe.enableLighting = true;
+        viewer.scene.globe.enableLighting = false;
         viewerRef.current = viewer;
         setLoaded(true);
       } catch (e) {
@@ -199,8 +221,14 @@ export default function CesiumView({
       cancelled = true;
       destroyInputHandler(handlerRef.current);
       handlerRef.current = null;
-      tilesetRef.current = null;
-      googleTilesetRef.current = null;
+      const viewer = viewerRef.current;
+      if (viewer) {
+        photorealisticTilesRef.current = destroyPhotorealisticTiles(
+          viewer,
+          photorealisticTilesRef.current,
+          "viewer destroyed",
+        );
+      }
       dataSources.clear();
       viewerRef.current?.destroy?.();
       viewerRef.current = null;
@@ -217,10 +245,17 @@ export default function CesiumView({
     void (async () => {
       try {
         const providers = await fetchTileProviders();
-        const provider = await createCesiumBasemapProvider(Cesium, basemap, providers);
+        const provider = await createCesiumBasemapProvider(
+          Cesium,
+          basemapFor3d(basemap),
+          providers,
+        );
         if (cancelled || viewer.isDestroyed?.()) return;
         viewer.imageryLayers.removeAll();
         viewer.imageryLayers.addImageryProvider(provider);
+        resetImageryAlpha(viewer);
+        cesiumDevLog("basemap", `Basemap switched to ${basemap}`);
+        viewer.scene.requestRender();
       } catch {
         /* keep current imagery */
       }
@@ -231,87 +266,123 @@ export default function CesiumView({
     };
   }, [basemap, loaded]);
 
-  // Terrain / mountains / underground / 3D tiles
+  // Terrain — elevation when terrain layer or photorealistic tiles need it.
   useEffect(() => {
     const viewer = viewerRef.current;
     const Cesium = cesiumRef.current;
     if (!viewer || !Cesium || !loaded) return;
 
-    viewer.scene.globe.show = scene3dLayers.terrain;
-    const exaggerate = scene3dLayers.terrain && scene3dLayers.mountains;
-    viewer.scene.globe.terrainExaggeration = exaggerate ? terrainExaggeration : 1;
+    const vendorTilesOn = !disableVendor3DTiles && layers.tiles3d;
+    const needElevation = vendorTilesOn;
+    const nextTerrainMode: "flat" | "elevation" = needElevation ? "elevation" : "flat";
 
-    if (undergroundView || scene3dLayers.pipeline || scene3dLayers.drainage) {
-      viewer.scene.globe.translucency.enabled = undergroundView;
-      viewer.scene.globe.translucency.frontFaceAlphaByDistance = new Cesium.NearFarScalar(
-        400,
-        0.35,
-        8000,
-        0.95,
-      );
-    } else {
-      viewer.scene.globe.translucency.enabled = false;
-    }
+    cesiumDevLog(
+      "terrain",
+      `${nextTerrainMode} terrain (3D city tiles ${layers.tiles3d ? "on" : "off"})`,
+    );
 
-    const loadTiles = async () => {
-      const show3dBuildings =
-        !disableVendor3DTiles &&
-        scene3dLayers.buildings &&
-        (layers.tiles3d || layers.buildings);
-      const providers = await fetchTileProviders();
+    viewer.scene.globe.show = true;
+    viewer.scene.globe.terrainExaggeration = 1;
+    viewer.scene.globe.terrainExaggerationRelativeHeight = 0;
+    viewer.scene.globe.enableLighting = false;
+    viewer.scene.globe.depthTestAgainstTerrain = false;
 
-      if (googleTilesetRef.current) {
-        googleTilesetRef.current.show = false;
-      }
-      if (tilesetRef.current) {
-        tilesetRef.current.show = false;
-      }
+    let cancelled = false;
+    const terrainChanged = terrainModeRef.current !== nextTerrainMode;
+    terrainModeRef.current = nextTerrainMode;
 
-      if (!show3dBuildings) return;
-
-      if (providers.google_3d_tiles_available && mapRuntimeRef.current.google_maps_api_key) {
+    void (async () => {
+      if (terrainChanged) {
         try {
-          Cesium.GoogleMaps.defaultApiKey = mapRuntimeRef.current.google_maps_api_key;
-          if (!googleTilesetRef.current) {
-            googleTilesetRef.current = await Cesium.createGooglePhotorealistic3DTileset({
-              onlyUsingWithGoogleGeocoder: true,
-            });
-            viewer.scene.primitives.add(googleTilesetRef.current);
-          }
-          googleTilesetRef.current.show = true;
+          viewer.scene.setTerrain(
+            nextTerrainMode === "elevation"
+              ? createElevationTerrain(Cesium, mapRuntimeRef.current.cesium_ion_token ?? undefined)
+              : createFlatTerrain(Cesium),
+          );
+          await new Promise<void>((resolve) => {
+            requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+          });
         } catch {
-          googleTilesetRef.current = null;
+          /* keep current terrain */
         }
+      }
+
+      if (!cancelled) {
+        setTerrainEpoch((n) => n + 1);
+        viewer.scene.requestRender();
+      }
+    })();
+
+    viewer.scene.requestRender();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [loaded, layers.tiles3d, disableVendor3DTiles]);
+
+  // Transparent / underground — globe translucency only (not pipeline/drainage).
+  useEffect(() => {
+    const viewer = viewerRef.current;
+    const Cesium = cesiumRef.current;
+    if (!viewer || !Cesium || !loaded) return;
+
+    const transparentOn = undergroundView;
+    cesiumDevLog(
+      "transparent",
+      transparentOn ? "Transparent ON (globe translucency)" : "Transparent OFF (opaque globe)",
+    );
+
+    if (transparentOn) {
+      applyGlobeTranslucency(viewer, Cesium);
+    } else {
+      resetGlobeTranslucency(viewer, Cesium);
+      resetImageryAlpha(viewer);
+    }
+    viewer.scene.requestRender();
+  }, [loaded, undergroundView]);
+
+  // Photorealistic 3D tiles — rebuild when terrain is ready or tile config changes.
+  useEffect(() => {
+    const viewer = viewerRef.current;
+    const Cesium = cesiumRef.current;
+    if (!viewer || !Cesium || !loaded) return;
+
+    const enabled = vendorPhotorealisticTilesEnabled();
+
+    cesiumDevLog(
+      "buildings",
+      `Photorealistic 3D tiles ${enabled ? "rebuilding" : "off"}`,
+    );
+
+    let cancelled = false;
+
+    void (async () => {
+      if (!enabled) {
+        photorealisticTilesRef.current = destroyPhotorealisticTiles(
+          viewer,
+          photorealisticTilesRef.current,
+          "3D tiles disabled",
+        );
         return;
       }
 
-      if (Cesium.Ion.defaultAccessToken) {
-        if (!tilesetRef.current) {
-          try {
-            tilesetRef.current = await Cesium.Cesium3DTileset.fromIonAssetId(96188);
-            viewer.scene.primitives.add(tilesetRef.current);
-          } catch {
-            tilesetRef.current = null;
-          }
-        }
-        if (tilesetRef.current) tilesetRef.current.show = true;
-      }
+      const providers = await fetchTileProviders();
+      if (cancelled || !vendorPhotorealisticTilesEnabled()) return;
+
+      photorealisticTilesRef.current = await syncPhotorealisticTiles({
+        viewer,
+        Cesium,
+        enabled: true,
+        state: photorealisticTilesRef.current,
+        providers,
+        runtime: mapRuntimeRef.current,
+      });
+    })();
+
+    return () => {
+      cancelled = true;
     };
-    void loadTiles();
-  }, [
-    loaded,
-    scene3dLayers.terrain,
-    scene3dLayers.mountains,
-    scene3dLayers.buildings,
-    scene3dLayers.pipeline,
-    scene3dLayers.drainage,
-    undergroundView,
-    layers.tiles3d,
-    layers.buildings,
-    disableVendor3DTiles,
-    terrainExaggeration,
-    basemap,
-  ]);
+  }, [loaded, disableVendor3DTiles, layers.tiles3d, terrainEpoch]);
 
   // Context layers: roads, buildings, water, alignment, boundary
   useEffect(() => {
@@ -421,24 +492,31 @@ export default function CesiumView({
       });
     }
 
-    buildingFeatures.forEach((f, i) => {
-      if (f.geometry.type !== "Polygon") return;
-      const ring = (f.geometry.coordinates as number[][][])[0];
-      const height = estimateBuildingHeight(f.properties ?? {});
-      buildingsDs.entities.add({
-        id: `building-${i}`,
-        name: String(f.properties?.name ?? f.properties?.["addr:street"] ?? `Building ${i + 1}`),
-        polygon: {
-          hierarchy: Cesium.Cartesian3.fromDegreesArray(ring.flat()),
-          extrudedHeight: height,
-          heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
-          material: Cesium.Color.fromCssColorString(MAP_COLORS.structure).withAlpha(0.85),
-          outline: true,
-          outlineColor: Cesium.Color.fromCssColorString(MAP_COLORS.structure),
-        },
-        properties: { ...f.properties, layer: "buildings", objectType: "Building", heightM: height },
+    if (scene3dLayers.buildings) {
+      buildingFeatures.forEach((f, i) => {
+        if (f.geometry.type !== "Polygon") return;
+        const ring = (f.geometry.coordinates as number[][][])[0];
+        const height = estimateBuildingHeight(f.properties ?? {});
+        buildingsDs.entities.add({
+          id: `building-${i}`,
+          name: String(f.properties?.name ?? f.properties?.["addr:street"] ?? `Building ${i + 1}`),
+          polygon: {
+            hierarchy: Cesium.Cartesian3.fromDegreesArray(ring.flat()),
+            height: 0,
+            heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
+            extrudedHeight: height,
+            extrudedHeightReference: Cesium.HeightReference.RELATIVE_TO_GROUND,
+            material: Cesium.Color.fromCssColorString(MAP_COLORS.contextBuilding),
+            outline: true,
+            outlineColor: Cesium.Color.fromCssColorString(MAP_COLORS.contextBuildingOutline),
+          },
+          properties: { ...f.properties, layer: "buildings", objectType: "Building", heightM: height },
+        });
       });
-    });
+      if (buildingFeatures.length > 0) {
+        cesiumDevLog("osm", `OSM extruded buildings created (${buildingFeatures.length})`);
+      }
+    }
 
     waterFeatures.forEach((f, i) => {
       if (f.geometry.type !== "LineString" && f.geometry.type !== "Polygon") return;
@@ -488,43 +566,6 @@ export default function CesiumView({
       }
     }
 
-    const bearing = alignmentBearing(alignment ?? null);
-    const position = Cesium.Cartesian3.fromDegrees(centerLng, centerLat, 0);
-    const orientation = Cesium.Transforms.headingPitchRollQuaternion(
-      position,
-      new Cesium.HeadingPitchRoll(bearing, 0, 0),
-    );
-    const explodedOffset = cesiumTool === "exploded" ? 25 : 0;
-    const modelOpts = {
-      minimumPixelSize: 48,
-      maximumScale: 20000,
-      silhouetteColor: Cesium.Color.fromCssColorString(MAP_COLORS.primary).withAlpha(0.4),
-      silhouetteSize: 2,
-    };
-
-    if (modelUrl && scene3dLayers.flyover) {
-      projectDs.entities.add({
-        id: "project-model",
-        name: "Flyover / bridge model",
-        position,
-        orientation,
-        show: visibility.showProjectModel,
-        model: { uri: modelUrl, ...modelOpts },
-        properties: { layer: "flyover", objectType: "Flyover", material: "Pre-stressed concrete" },
-      });
-    }
-    if (excavationUrl && scene3dLayers.excavation) {
-      projectDs.entities.add({
-        id: "excavation-model",
-        name: "Excavation volume",
-        position: Cesium.Cartesian3.fromDegrees(centerLng, centerLat, -explodedOffset),
-        orientation,
-        show: visibility.showExcavation,
-        model: { uri: excavationUrl, ...modelOpts },
-        properties: { layer: "excavation", objectType: "Excavation", material: "Soil" },
-      });
-    }
-
     projectDs.show =
       scene3dLayers.flyover || scene3dLayers.bridge || scene3dLayers.excavation;
 
@@ -555,12 +596,180 @@ export default function CesiumView({
     surveyGcpFeatures,
     surveyLayers.surveyGcp,
     scene3dLayers,
+    cesiumTool,
+    terrainEpoch,
+  ]);
+
+  // AI design GLB models (per-mesh layer visibility via node names)
+  useEffect(() => {
+    const viewer = viewerRef.current;
+    const Cesium = cesiumRef.current;
+    if (!viewer || !Cesium || !loaded) return;
+
+    let cancelled = false;
+
+    const destroyModel = (model: { destroy?: () => void; isDestroyed?: () => boolean } | null) => {
+      if (!model) return;
+      try {
+        viewer.scene.primitives.remove(model);
+        if (!model.isDestroyed?.()) model.destroy?.();
+      } catch {
+        /* viewer shutting down */
+      }
+    };
+
+    (async () => {
+      destroyModel(modelsRef.current.main);
+      destroyModel(modelsRef.current.excav);
+      modelsRef.current = { main: null, excav: null };
+
+      const placement = designModelAnchor(alignment ?? null, centerLng, centerLat);
+      const groundHeight = await designModelGroundHeightM(
+        Cesium,
+        viewer,
+        placement.lng,
+        placement.lat,
+      );
+      const modelOpts = {
+        minimumPixelSize: 48,
+        maximumScale: 20000,
+        silhouetteColor: Cesium.Color.fromCssColorString(MAP_COLORS.primary).withAlpha(0.4),
+        silhouetteSize: 2,
+      };
+
+      if (modelUrl && scene3dLayers.flyover && (useModelLayers ? visibility.showProjectModel : layers.projectModel)) {
+        const modelMatrix = buildDesignModelMatrix(
+          Cesium,
+          placement.lng,
+          placement.lat,
+          placement.bearingRad,
+          groundHeight,
+        );
+        const model = await Cesium.Model.fromGltfAsync({
+          url: modelUrl,
+          modelMatrix,
+          ...modelOpts,
+        });
+        if (cancelled) {
+          model.destroy();
+          return;
+        }
+        viewer.scene.primitives.add(model);
+        modelsRef.current.main = model;
+        applyDesignMeshVisibilityWhenReady(
+          model,
+          useProjectStore.getState().designMeshCatalog,
+          useProjectStore.getState().designMeshVisibility,
+        );
+      }
+
+      const showExcav = useModelLayers ? visibility.showExcavation : layers.excavation;
+      if (excavationUrl && scene3dLayers.excavation && showExcav) {
+        const excavHeight = groundHeight + (cesiumTool === "exploded" ? -25 : 0);
+        const excavMatrix = buildDesignModelMatrix(
+          Cesium,
+          placement.lng,
+          placement.lat,
+          placement.bearingRad,
+          excavHeight,
+        );
+        const excav = await Cesium.Model.fromGltfAsync({
+          url: excavationUrl,
+          modelMatrix: excavMatrix,
+          ...modelOpts,
+        });
+        if (cancelled) {
+          excav.destroy();
+          return;
+        }
+        viewer.scene.primitives.add(excav);
+        modelsRef.current.excav = excav;
+        applyDesignMeshVisibilityWhenReady(
+          excav,
+          useProjectStore.getState().designMeshCatalog,
+          useProjectStore.getState().designMeshVisibility,
+        );
+        if (!useProjectStore.getState().designMeshCatalog.length) {
+          excav.show = useProjectStore.getState().designMeshVisibility.excavation !== false;
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    loaded,
+    modelUrl,
+    excavationUrl,
+    centerLng,
+    centerLat,
+    alignment,
+    scene3dLayers.flyover,
+    scene3dLayers.excavation,
+    cesiumTool,
+    useModelLayers,
     visibility.showProjectModel,
     visibility.showExcavation,
+    layers.projectModel,
+    layers.excavation,
+    designMeshCatalog,
+    designMeshVisibility,
+    terrainEpoch,
+  ]);
+
+  // Re-anchor design models when terrain changes (keep ENU up, no axis tilt).
+  useEffect(() => {
+    const viewer = viewerRef.current;
+    const Cesium = cesiumRef.current;
+    if (!viewer || !Cesium || !loaded) return;
+
+    let cancelled = false;
+
+    void (async () => {
+      const placement = designModelAnchor(alignment ?? null, centerLng, centerLat);
+      const groundHeight = await designModelGroundHeightM(
+        Cesium,
+        viewer,
+        placement.lng,
+        placement.lat,
+      );
+      if (cancelled) return;
+
+      const { main, excav } = modelsRef.current;
+      if (main && !main.isDestroyed?.()) {
+        main.modelMatrix = buildDesignModelMatrix(
+          Cesium,
+          placement.lng,
+          placement.lat,
+          placement.bearingRad,
+          groundHeight,
+        );
+      }
+      if (excav && !excav.isDestroyed?.()) {
+        excav.modelMatrix = buildDesignModelMatrix(
+          Cesium,
+          placement.lng,
+          placement.lat,
+          placement.bearingRad,
+          groundHeight + (cesiumTool === "exploded" ? -25 : 0),
+        );
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    loaded,
+    centerLng,
+    centerLat,
+    alignment,
+    terrainEpoch,
     cesiumTool,
   ]);
 
-  // Layer visibility toggles without full rebuild
+  // Layer visibility toggles without full rebuild (except buildings handled above on rebuild).
   useEffect(() => {
     if (!loaded) return;
     const map = dataSourcesRef.current;
@@ -571,12 +780,30 @@ export default function CesiumView({
     const projectDs = map.get("project");
     if (projectDs) {
       projectDs.show = scene3dLayers.flyover || scene3dLayers.excavation;
-      const model = projectDs.entities.getById("project-model");
-      if (model) model.show = visibility.showProjectModel && scene3dLayers.flyover;
-      const excav = projectDs.entities.getById("excavation-model");
-      if (excav) excav.show = visibility.showExcavation && scene3dLayers.excavation;
     }
-  }, [loaded, scene3dLayers, visibility]);
+
+    const showVendor = !disableVendor3DTiles && layers.tiles3d;
+    setPhotorealisticTilesVisible(photorealisticTilesRef.current, showVendor);
+    viewerRef.current?.scene?.requestRender?.();
+
+    const { main, excav } = modelsRef.current;
+    if (main) {
+      main.show = scene3dLayers.flyover && (useModelLayers ? visibility.showProjectModel : layers.projectModel);
+      if (designMeshCatalog.length) {
+        applyDesignMeshVisibilityWhenReady(main, designMeshCatalog, designMeshVisibility);
+      }
+    }
+    if (excav) {
+      const showExcav = useModelLayers ? visibility.showExcavation : layers.excavation;
+      excav.show =
+        scene3dLayers.excavation &&
+        showExcav &&
+        designMeshVisibility.excavation !== false;
+      if (designMeshCatalog.length) {
+        applyDesignMeshVisibilityWhenReady(excav, designMeshCatalog, designMeshVisibility);
+      }
+    }
+  }, [loaded, scene3dLayers, visibility, layers.projectModel, layers.excavation, layers.tiles3d, useModelLayers, designMeshCatalog, designMeshVisibility, disableVendor3DTiles]);
 
   // Camera home
   useEffect(() => {

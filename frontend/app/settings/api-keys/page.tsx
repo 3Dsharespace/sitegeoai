@@ -20,7 +20,7 @@ const PROVIDERS = [
   { env: "MAPBOX_TOKEN", label: "Mapbox", use: "Geocoding + HD satellite imagery" },
   { env: "OPENAI_API_KEY", label: "OpenAI", use: "AI design generation" },
   { env: "ANTHROPIC_API_KEY", label: "Anthropic", use: "AI design generation" },
-  { env: "GEMINI_API_KEY", label: "Google Gemini", use: "AI design generation" },
+  { env: "GEMINI_API_KEY", label: "Google Gemini", use: "Not implemented yet — key stored for future use" },
 ];
 
 export default function ProviderStatusPage() {

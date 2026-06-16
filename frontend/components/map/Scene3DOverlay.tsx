@@ -10,7 +10,7 @@ export default function Scene3DOverlay() {
 
   return (
     <>
-      <div className="absolute top-16 left-3 z-20 w-[200px] max-h-[calc(100%-8rem)] overflow-y-auto pointer-events-auto panel-glass rounded-lg p-2 hidden lg:block">
+      <div className="absolute top-16 left-3 z-20 w-[200px] max-h-[calc(100%-8rem)] overflow-y-auto pointer-events-auto panel-glass rounded-lg p-2 md:hidden">
         <Scene3DLayerPanel compact />
       </div>
 

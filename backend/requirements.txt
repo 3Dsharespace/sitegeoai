@@ -27,3 +27,6 @@ Pillow>=10.0
 
 # Testing
 pytest>=8.0
+
+# Optional observability (initialized only when SENTRY_DSN is set)
+sentry-sdk>=2.0

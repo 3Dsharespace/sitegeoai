@@ -1,12 +1,31 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { api } from "@/lib/api";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { api, ApiError } from "@/lib/api";
+import { logModelViewerState } from "@/lib/model-viewer-debug";
+import {
+  hasCompletedGlbModel,
+  isJobGenerating,
+  resolveModelUrls,
+  type ResolvedModelUrls,
+} from "@/lib/model-url-resolution";
+import { modelLayerEnableState } from "@/lib/model-viewer-state";
+import { resolveWorkspaceMapEngine } from "@/lib/map/workspace-engine";
+import {
+  detailModelUrl,
+  detailToDesignScenario,
+  extractGeneratedFilesFromDetail,
+  extractLegacyScenarios,
+  parseScenarioList,
+} from "@/lib/scenario-api";
 import type {
   DesignScenario,
   GeneratedFileInfo,
+  JobStatus,
   Project,
   QuantityEstimate,
+  ScenarioListResponse,
+  ScenarioSummary,
   SiteAnalysis,
 } from "@/lib/types";
 import type { SummaryStats } from "@/components/layout/BottomSummaryBar";
@@ -14,27 +33,85 @@ import { useProjectStore } from "@/stores/projectStore";
 
 const scenarioStorageKey = (projectId: number) => `project-${projectId}-scenario-id`;
 
-export function useProjectData(projectId: number) {
+export function useProjectData(projectId: number, options?: { activeJob?: JobStatus | null }) {
   const [project, setProject] = useState<Project | null>(null);
-  const [scenarios, setScenarios] = useState<DesignScenario[]>([]);
+  const [scenarioSummaries, setScenarioSummaries] = useState<ScenarioSummary[]>([]);
   const [scenario, setScenario] = useState<DesignScenario | null>(null);
+  const [scenarioDetailFiles, setScenarioDetailFiles] = useState<GeneratedFileInfo[]>([]);
+  const [scenarioDetailModelUrl, setScenarioDetailModelUrl] = useState<string | null>(null);
   const [estimate, setEstimate] = useState<QuantityEstimate | null>(null);
   const [analysis, setAnalysis] = useState<SiteAnalysis | null>(null);
   const [files, setFiles] = useState<GeneratedFileInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const legacyScenariosRef = useRef<Map<number, DesignScenario>>(new Map());
+  const activeJob = options?.activeJob ?? null;
 
-  const pickScenario = useCallback((list: DesignScenario[], preferredId?: number | null) => {
+  const pickSummary = useCallback((list: ScenarioSummary[], preferredId?: number | null) => {
     if (preferredId) {
-      const found = list.find((s) => s.id === preferredId);
+      const found = list.find((s) => s.scenario_id === preferredId);
       if (found) return found;
     }
     return list.find((s) => s.status === "completed") ?? list[0] ?? null;
   }, []);
 
-  const load = useCallback(async () => {
+  const applyScenarioDetail = useCallback((detail: Record<string, unknown>) => {
+    const mapped = detailToDesignScenario(detail);
+    setScenario(mapped);
+    setScenarioDetailFiles(extractGeneratedFilesFromDetail(detail));
+    setScenarioDetailModelUrl(detailModelUrl(detail));
+    const spec = mapped.design_output_json?.geometry_spec;
+    if (spec) {
+      useProjectStore.getState().syncDesignMeshFromSpec(spec);
+    }
+    return mapped;
+  }, []);
+
+  const loadScenarioDetail = useCallback(
+    async (summary: ScenarioSummary, legacy?: Map<number, DesignScenario>) => {
+      const legacyScenario = legacy?.get(summary.scenario_id);
+      if (legacyScenario?.design_output_json) {
+        setScenario(legacyScenario);
+        setScenarioDetailFiles([]);
+        setScenarioDetailModelUrl(null);
+        const spec = legacyScenario.design_output_json?.geometry_spec;
+        if (spec) {
+          useProjectStore.getState().syncDesignMeshFromSpec(spec);
+        }
+        if (typeof window !== "undefined") {
+          localStorage.setItem(scenarioStorageKey(projectId), String(summary.scenario_id));
+        }
+        return legacyScenario;
+      }
+
+      const detail = await api.getOptional<Record<string, unknown>>(
+        `/api/projects/${projectId}/scenarios/${summary.scenario_id}`,
+      );
+      if (detail) {
+        const mapped = applyScenarioDetail(detail);
+        if (typeof window !== "undefined") {
+          localStorage.setItem(scenarioStorageKey(projectId), String(summary.scenario_id));
+        }
+        return mapped;
+      }
+
+      if (legacyScenario) {
+        setScenario(legacyScenario);
+        setScenarioDetailFiles([]);
+        setScenarioDetailModelUrl(null);
+        return legacyScenario;
+      }
+
+      throw new ApiError(404, "Scenario not found");
+    },
+    [applyScenarioDetail, projectId],
+  );
+
+  const load = useCallback(async (loadOptions?: { silent?: boolean }) => {
     if (!projectId || Number.isNaN(projectId)) return;
-    setLoading(true);
+    if (!loadOptions?.silent) {
+      setLoading(true);
+    }
     setError("");
     try {
       const storedId =
@@ -42,36 +119,58 @@ export function useProjectData(projectId: number) {
           ? Number(localStorage.getItem(scenarioStorageKey(projectId)) || "") || null
           : null;
 
-      const [p, scenarioList, fileList] = await Promise.all([
+      const [p, scenarioRes, fileList] = await Promise.all([
         api.get<Project>(`/api/projects/${projectId}`),
-        api.get<DesignScenario[]>(`/api/projects/${projectId}/scenarios`),
+        api.get<ScenarioListResponse | ScenarioSummary[] | DesignScenario[]>(
+          `/api/projects/${projectId}/scenarios`,
+        ),
         api.get<GeneratedFileInfo[]>(`/api/projects/${projectId}/exports/files`),
       ]);
       setProject(p);
       useProjectStore.getState().setProject(p);
-      setScenarios(scenarioList);
-      setScenario(pickScenario(scenarioList, storedId));
+      const legacyScenarios = extractLegacyScenarios(scenarioRes);
+      legacyScenariosRef.current = legacyScenarios;
+      const summaries = parseScenarioList(scenarioRes);
+      setScenarioSummaries(summaries);
       setFiles(fileList);
 
-      try {
-        const e = await api.get<QuantityEstimate>(`/api/projects/${projectId}/estimates`);
-        setEstimate(e);
-      } catch {
-        setEstimate(null);
+      const picked = pickSummary(summaries, storedId);
+      if (picked) {
+        try {
+          await loadScenarioDetail(picked, legacyScenarios);
+        } catch (e) {
+          if (e instanceof ApiError && e.status === 404 && typeof window !== "undefined") {
+            localStorage.removeItem(scenarioStorageKey(projectId));
+          }
+          const fallback = pickSummary(summaries, null);
+          if (fallback && fallback.scenario_id !== picked.scenario_id) {
+            await loadScenarioDetail(fallback, legacyScenarios);
+          } else {
+            setScenario(null);
+            setScenarioDetailFiles([]);
+            setScenarioDetailModelUrl(null);
+          }
+        }
+      } else {
+        setScenario(null);
+        setScenarioDetailFiles([]);
+        setScenarioDetailModelUrl(null);
       }
 
-      try {
-        const a = await api.get<SiteAnalysis>(`/api/projects/${projectId}/site-analysis`);
-        setAnalysis(a);
-      } catch {
-        setAnalysis(null);
-      }
+      const [e, a] = await Promise.all([
+        api.getOptional<QuantityEstimate>(`/api/projects/${projectId}/estimates`),
+        api.getOptional<SiteAnalysis>(`/api/projects/${projectId}/site-analysis`),
+      ]);
+      setEstimate(e);
+      setAnalysis(a);
     } catch (e) {
       setError(String(e instanceof Error ? e.message : e));
     } finally {
-      setLoading(false);
+      if (!loadOptions?.silent) {
+        setLoading(false);
+      }
     }
-  }, [projectId, pickScenario]);
+  }, [projectId, pickSummary, loadScenarioDetail]);
 
   useEffect(() => {
     let cancelled = false;
@@ -84,30 +183,106 @@ export function useProjectData(projectId: number) {
     };
   }, [load]);
 
-  const selectScenario = useCallback((s: DesignScenario) => {
-    setScenario(s);
-    if (typeof window !== "undefined") {
-      localStorage.setItem(scenarioStorageKey(projectId), String(s.id));
-    }
-  }, [projectId]);
+  const selectScenario = useCallback(
+    async (summary: ScenarioSummary) => {
+      await loadScenarioDetail(summary, legacyScenariosRef.current);
+    },
+    [loadScenarioDetail],
+  );
+
+  const scenarios: DesignScenario[] = useMemo(
+    () =>
+      scenarioSummaries.map((s) => ({
+        id: s.scenario_id,
+        name: s.name,
+        status: s.status,
+        created_at: s.created_at ?? "",
+        input_parameters_json: null,
+        design_output_json:
+          scenario?.id === s.scenario_id ? scenario.design_output_json : null,
+        assumptions_json: scenario?.id === s.scenario_id ? scenario.assumptions_json : s.key_assumptions ?? null,
+      })),
+    [scenarioSummaries, scenario],
+  );
 
   const calc = scenario?.design_output_json?.calculated;
-  const modelFile = useMemo(
+  const activeSummary = scenarioSummaries.find((s) => s.scenario_id === scenario?.id);
+
+  const generating = isJobGenerating(activeJob);
+
+  const resolvedModels: ResolvedModelUrls = useMemo(
     () =>
-      files.find((f) => f.file_type === "glb" && (f.scenario_id === scenario?.id || !f.scenario_id)) ??
-      files.find((f) => f.file_type === "glb"),
-    [files, scenario?.id],
-  );
-  const excavationFile = useMemo(
-    () =>
-      files.find(
-        (f) => f.file_type === "glb-excavation" && (f.scenario_id === scenario?.id || !f.scenario_id),
-      ) ?? files.find((f) => f.file_type === "glb-excavation"),
-    [files, scenario?.id],
+      resolveModelUrls({
+        activeJob,
+        generating,
+        scenarioId: scenario?.id ?? null,
+        projectFiles: files,
+        scenarioDetailFiles,
+        activeSummary,
+        scenarioSummaries,
+        scenarioDetailModelUrl,
+      }),
+    [
+      activeJob,
+      generating,
+      scenario?.id,
+      files,
+      scenarioDetailFiles,
+      activeSummary,
+      scenarioSummaries,
+      scenarioDetailModelUrl,
+    ],
   );
 
+  const modelFile = useMemo((): GeneratedFileInfo | undefined => {
+    if (!resolvedModels.modelUrl) return undefined;
+    return {
+      id: 0,
+      file_type: "glb",
+      file_url: resolvedModels.modelUrl,
+      scenario_id: scenario?.id ?? activeSummary?.scenario_id ?? null,
+      created_at: activeSummary?.created_at ?? "",
+    };
+  }, [resolvedModels.modelUrl, scenario?.id, activeSummary]);
+
+  const excavationFile = useMemo((): GeneratedFileInfo | undefined => {
+    if (!resolvedModels.excavationUrl) return undefined;
+    return {
+      id: 0,
+      file_type: "glb-excavation",
+      file_url: resolvedModels.excavationUrl,
+      scenario_id: scenario?.id ?? activeSummary?.scenario_id ?? null,
+      created_at: activeSummary?.created_at ?? "",
+    };
+  }, [resolvedModels.excavationUrl, scenario?.id, activeSummary]);
+
+  useEffect(() => {
+    if (!project || !resolvedModels.modelUrl) return;
+    const enable = modelLayerEnableState(project.project_type, true);
+    useProjectStore.getState().setLayers(enable.layers);
+    useProjectStore.getState().setScene3dLayers(enable.scene3dLayers);
+
+    logModelViewerState({
+      scenarioId: scenario?.id ?? null,
+      modelUrl: resolvedModels.modelUrl,
+      modelSource: resolvedModels.modelSource,
+      mapEngine: resolveWorkspaceMapEngine(hasCompletedGlbModel(resolvedModels)),
+      projectModelLayerEnabled: enable.projectModelEnabled,
+      generating,
+    });
+  }, [
+    project,
+    resolvedModels.modelUrl,
+    resolvedModels.modelSource,
+    scenario?.id,
+    generating,
+  ]);
+
   const summaryStats: SummaryStats = {
-    totalCost: estimate?.total_cost_estimate ?? calc?.cost_summary.total_medium,
+    totalCost:
+      estimate?.total_cost_estimate ??
+      activeSummary?.cost_total ??
+      calc?.cost_summary.total_medium,
     cementBags: estimate?.cement_bags ?? calc?.quantities.cement_bags,
     steelKg: estimate?.steel_kg ?? calc?.quantities.steel_kg,
     excavationM3: estimate?.excavation_m3 ?? calc?.quantities.excavation_m3,
@@ -124,6 +299,7 @@ export function useProjectData(projectId: number) {
   return {
     project,
     scenarios,
+    scenarioSummaries,
     scenario,
     selectScenario,
     estimate,
@@ -135,6 +311,7 @@ export function useProjectData(projectId: number) {
     calc,
     modelFile,
     excavationFile,
+    resolvedModels,
     summaryStats,
     design: scenario?.design_output_json ?? null,
   };

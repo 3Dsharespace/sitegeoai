@@ -14,7 +14,7 @@ A preliminary planning platform for civil and infrastructure projects: pick a re
 | Database | PostGIS (production) · SQLite fallback (local demo) |
 | Jobs | Redis + Arq · in-process dev fallback |
 | Storage | MinIO/S3 · local filesystem dev fallback |
-| AI | OpenAI / Anthropic / Gemini / **mock** — quantities always from backend calculators |
+| AI | Ollama (local) / OpenAI / Anthropic / **mock** — quantities always from backend calculators |
 
 ## Features
 
@@ -44,7 +44,8 @@ Without Docker, SQLite + mock providers work for the full demo flow. See **[LOCA
 ## Documentation
 
 - **[LOCAL_SETUP.md](./LOCAL_SETUP.md)** — dev environment, env vars, migrations, tests, demo flow
-- **[DEPLOYMENT.md](./DEPLOYMENT.md)** — Netlify frontend, Render backend, PostGIS, security
+- **[DEPLOYMENT.md](./DEPLOYMENT.md)** — Render backend, Netlify frontend, smoke tests, CI
+- **[STAGING_CHECKLIST.md](./STAGING_CHECKLIST.md)** — pre-launch staging QA checklist
 - **[MANUAL_QA.md](./MANUAL_QA.md)** — browser QA checklist before demo/deploy
 
 ## API
@@ -75,9 +76,12 @@ Full survey workflows require **PostGIS**. SQLite shows **Limited GIS mode** in 
 ```bash
 cd backend
 pytest
+
+# Production smoke (against deployed API)
+python scripts/production_smoke.py --base-url https://YOUR-API.onrender.com
 ```
 
-Covers health, demo project, validation, calculators, cost/timeline/UTM, survey import safety, PDF export.
+Covers health, demo project, validation, calculators, auth, usage limits, deployment config, job reliability, and PDF export.
 
 ## Project structure
 

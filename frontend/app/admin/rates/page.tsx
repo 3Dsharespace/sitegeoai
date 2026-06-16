@@ -5,11 +5,13 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { api } from "@/lib/api";
 import { toastPromise } from "@/lib/toast";
+import { useAuthUser } from "@/lib/useAuthUser";
 import type { RateItem } from "@/lib/types";
 
 const EMPTY = { region: "default", item_code: "", item_name: "", unit: "m3", rate: 0, currency: "INR" };
 
 export default function RatesPage() {
+  const { isAdmin, loading: authLoading } = useAuthUser();
   const [rates, setRates] = useState<RateItem[]>([]);
   const [draft, setDraft] = useState({ ...EMPTY });
   const [error, setError] = useState("");
@@ -54,9 +56,13 @@ export default function RatesPage() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Material & Labor Rates</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Regional rates drive all cost estimates. Edit inline — new designs pick up changes immediately.
+            Regional rates drive all cost estimates.
+            {isAdmin ? " Edit inline — new designs pick up changes immediately." : " Read-only view."}
           </p>
         </div>
+        {!authLoading && !isAdmin && (
+          <p className="text-xs text-amber-600/90">Admin access is required to edit rates.</p>
+        )}
         {error && <p className="text-sm text-destructive">{error}</p>}
 
         <Card className="overflow-x-auto">
@@ -77,29 +83,36 @@ export default function RatesPage() {
                   <td className="px-3 py-2">{r.item_name}</td>
                   <td className="px-3 py-2 text-xs">{r.unit}</td>
                   <td className="px-3 py-2">
-                    <input
-                      type="number"
-                      aria-label={`Update rate for ${r.item_name}`}
-                      defaultValue={r.rate}
-                      onBlur={(e) => {
-                        const v = parseFloat(e.target.value);
-                        if (v !== r.rate && !Number.isNaN(v)) updateRate(r, v);
-                      }}
-                      className="w-28 rounded border border-[#334155] bg-background px-2 py-1 text-xs font-data focus:border-primary focus:shadow-[var(--shadow-focus)] focus:outline-none"
-                    />
+                    {isAdmin ? (
+                      <input
+                        type="number"
+                        aria-label={`Update rate for ${r.item_name}`}
+                        defaultValue={r.rate}
+                        onBlur={(e) => {
+                          const v = parseFloat(e.target.value);
+                          if (v !== r.rate && !Number.isNaN(v)) updateRate(r, v);
+                        }}
+                        className="w-28 rounded border border-[#334155] bg-background px-2 py-1 text-xs font-data focus:border-primary focus:shadow-[var(--shadow-focus)] focus:outline-none"
+                      />
+                    ) : (
+                      <span className="font-data text-xs">{r.rate}</span>
+                    )}
                   </td>
                   <td className="px-3 py-2 text-xs">{r.currency}</td>
                   <td className="px-3 py-2">
-                    <button
-                      type="button"
-                      onClick={() => remove(r.id)}
-                      className="text-destructive text-xs hover:underline"
-                    >
-                      delete
-                    </button>
+                    {isAdmin && (
+                      <button
+                        type="button"
+                        onClick={() => remove(r.id)}
+                        className="text-destructive text-xs hover:underline"
+                      >
+                        delete
+                      </button>
+                    )}
                   </td>
                 </tr>
               ))}
+              {isAdmin && (
               <tr className="border-t border-border bg-muted/20">
                 <td className="px-3 py-2">
                   <input
@@ -152,6 +165,7 @@ export default function RatesPage() {
                   </Button>
                 </td>
               </tr>
+              )}
             </tbody>
           </table>
         </Card>

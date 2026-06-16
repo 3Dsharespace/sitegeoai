@@ -42,6 +42,33 @@ def _kv_table(rows: list[tuple[str, str]]) -> Table:
     return table
 
 
+def _design_review_section(review: dict | None) -> list:
+    if not review:
+        return [Paragraph("Design engineering review not available — generate a design scenario first.", NOTE)]
+    out: list = []
+    out.append(_kv_table([
+        ("Validation status", review.get("validation_status", "n/a")),
+        ("Validation score", str(review.get("validation_score", "n/a"))),
+        ("Geometry mode", review.get("geometry_mode", "n/a")),
+        ("Elevation mode", review.get("elevation_mode", "n/a")),
+        ("Planning mode", review.get("planning_mode", "n/a")),
+        ("Alignment-based", "Yes" if review.get("alignment_based") else "No"),
+    ]))
+    warnings = review.get("warnings") or []
+    if warnings:
+        out.append(Spacer(1, 0.3 * cm))
+        out.append(Paragraph("Design validation warnings:", BODY))
+        out.extend(_bullets(warnings[:8]))
+    recs = review.get("recommendations") or []
+    if recs:
+        out.append(Spacer(1, 0.3 * cm))
+        out.append(Paragraph("Recommendations:", BODY))
+        out.extend(_bullets(recs[:6]))
+    out.append(Spacer(1, 0.3 * cm))
+    out.append(Paragraph(review.get("conceptual_disclaimer", ""), WARN))
+    return out
+
+
 def _validation_section(validation: dict | None) -> list:
     if not validation:
         return [Paragraph("Validation not run.", NOTE)]
@@ -130,6 +157,10 @@ def build_pdf(project, analysis, scenario, estimate, validation: dict | None = N
     # Validation / survey grade
     story.append(Paragraph("5b. Survey Grade & Validation", H2))
     story.extend(_validation_section(validation))
+
+    design_review = design.get("design_review") if scenario else None
+    story.append(Paragraph("5c. Design Engineering Review", H2))
+    story.extend(_design_review_section(design_review))
 
     # 6. Assumptions
     story.append(Paragraph("6. Input Assumptions", H2))

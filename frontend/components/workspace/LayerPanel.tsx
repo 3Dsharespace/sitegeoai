@@ -5,9 +5,9 @@ import { type LayerVisibility, useProjectStore } from "@/stores/projectStore";
 const LAYERS: { key: keyof LayerVisibility; label: string }[] = [
   { key: "satellite", label: "Satellite imagery" },
   { key: "roads", label: "Roads (OSM)" },
-  { key: "buildings", label: "Buildings (OSM)" },
+  { key: "buildings", label: "Buildings (OSM context)" },
   { key: "terrain", label: "Terrain" },
-  { key: "tiles3d", label: "3D Tiles" },
+  { key: "tiles3d", label: "3D city tiles" },
   { key: "projectModel", label: "Generated model" },
   { key: "excavation", label: "Excavation" },
   { key: "utilities", label: "Utility / pipeline" },

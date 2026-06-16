@@ -25,14 +25,32 @@ class Settings(BaseSettings):
     CESIUM_ION_TOKEN: str = ""
     MAPBOX_TOKEN: str = ""
 
+    # AI — AI_PROVIDER selects primary: ollama | openai | anthropic | mock (auto)
+    AI_PROVIDER: str = "mock"
     OPENAI_API_KEY: str = ""
     ANTHROPIC_API_KEY: str = ""
     GEMINI_API_KEY: str = ""
 
+    OLLAMA_BASE_URL: str = "http://localhost:11434"
+    OLLAMA_MODEL: str = "llama3.2"
+    OLLAMA_TIMEOUT_SECONDS: int = 120
+
     APP_SECRET: str = "dev-secret-change-me"
     AUTH_REQUIRE_JWT: bool = False
+    DEV_MOCK_USER_ROLE: str = "admin"
     ENVIRONMENT: str = "development"
     NEXT_PUBLIC_APP_URL: str = "http://localhost:3000"
+
+    GENERATION_JOB_TIMEOUT_SECONDS: int = 300
+
+    USAGE_LIMITS_ENABLED: bool = True
+    RATE_LIMITING_ENABLED: bool = True
+    # When true and Redis is available, design jobs enqueue to the Arq worker.
+    USE_ARQ_WORKER: bool = False
+
+    SENTRY_DSN: str = ""
+    SENTRY_ENVIRONMENT: str = ""
+    SENTRY_TRACES_SAMPLE_RATE: float = 0.1
 
     LOCAL_STORAGE_DIR: str = str(BACKEND_DIR / "storage")
 

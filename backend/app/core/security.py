@@ -3,15 +3,21 @@
 import logging
 from typing import Any
 
-from fastapi import Header, HTTPException
+from fastapi import Depends, Header, HTTPException
 from jose import JWTError, jwt
+from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.core.plans import PLAN_ADMIN
+from app.db.models import User
+from app.db.session import get_db
 
 logger = logging.getLogger(__name__)
 
 DEV_USER_ID = 1
 ALGORITHM = "HS256"
+ROLE_USER = "user"
+ROLE_ADMIN = "admin"
 
 
 def create_access_token(user_id: int, extra: dict[str, Any] | None = None) -> str:
@@ -40,3 +46,40 @@ def get_current_user_id(
     if settings.AUTH_REQUIRE_JWT:
         raise HTTPException(401, "Authorization required")
     return x_mock_user_id if x_mock_user_id is not None else DEV_USER_ID
+
+
+def _dev_mock_role() -> str:
+    role = (settings.DEV_MOCK_USER_ROLE or ROLE_ADMIN).lower()
+    return ROLE_ADMIN if role == ROLE_ADMIN else ROLE_USER
+
+
+def get_current_user(
+    user_id: int = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+) -> User:
+    user = db.get(User, user_id)
+    if user is not None:
+        return user
+    if settings.AUTH_REQUIRE_JWT:
+        raise HTTPException(401, "User not found")
+    return User(
+        id=user_id,
+        name="Dev User",
+        email="dev@example.com",
+        role=_dev_mock_role(),
+        plan=PLAN_ADMIN if _dev_mock_role() == ROLE_ADMIN else "free",
+    )
+
+
+def get_current_admin_user(user: User = Depends(get_current_user)) -> User:
+    return require_admin(user)
+
+
+def require_admin(user: User) -> User:
+    if user.role != ROLE_ADMIN:
+        raise HTTPException(403, "Admin access required")
+    return user
+
+
+def is_admin(user: User) -> bool:
+    return user.role == ROLE_ADMIN

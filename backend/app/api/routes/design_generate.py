@@ -1,15 +1,22 @@
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, HTTPException, Request
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.api.routes.projects import get_owned_project
-from app.core.security import get_current_user_id
-from app.db.models import DesignScenario, Project
-from app.db.session import SessionLocal, get_db
+from app.core.security import get_current_user, get_current_user_id
+from app.db.models import DesignScenario, User
+from app.db.session import get_db
 from app.services import jobs
-from app.services.ai.orchestrator import run_design_generation
+from app.services.design.scenario_summary import (
+    build_scenario_detail,
+    build_scenario_summary,
+    compare_scenarios,
+)
+from app.services.audit import log_audit_event
+from app.services.rate_limit import enforce_rate_limit
+from app.services.usage import enforce_usage_limit, record_usage_event
 
 router = APIRouter(prefix="/api/projects/{project_id}", tags=["design"])
 
@@ -17,45 +24,74 @@ router = APIRouter(prefix="/api/projects/{project_id}", tags=["design"])
 class GenerateRequest(BaseModel):
     scenario_name: str = "Scenario 1"
     parameters: dict[str, Any] = {}
+    generation_mode: str = "balanced"  # fast_preview | balanced | high_detail
+
+
+class CompareScenariosRequest(BaseModel):
+    scenario_ids: list[int] = Field(min_length=2, max_length=4)
 
 
 @router.post("/design/generate")
 async def generate_design(
     project_id: int,
     payload: GenerateRequest,
+    request: Request,
     db: Session = Depends(get_db),
-    user_id: int = Depends(get_current_user_id),
+    user: User = Depends(get_current_user),
 ):
-    project = get_owned_project(project_id, db, user_id)
+    project = get_owned_project(project_id, db, user.id)
+    mode = payload.generation_mode if payload.generation_mode in (
+        "fast_preview",
+        "balanced",
+        "high_detail",
+    ) else "balanced"
+
+    enforce_rate_limit("generation.start", user_id=user.id, request=request)
+    enforce_usage_limit(db, user, "scenario.created", project_id=project.id, request=request)
+    enforce_usage_limit(db, user, "generation.started", project_id=project.id, request=request)
+
     scenario = DesignScenario(
         project_id=project.id,
         name=payload.scenario_name,
-        input_parameters_json=payload.parameters,
+        input_parameters_json={**payload.parameters, "generation_mode": mode},
         status="running",
     )
     db.add(scenario)
     db.commit()
     db.refresh(scenario)
     scenario_id = scenario.id
+    record_usage_event(
+        db,
+        user_id=user.id,
+        event_type="scenario.created",
+        project_id=project.id,
+        metadata={"scenario_id": scenario_id},
+    )
 
-    async def _job(job_id: str):
-        job_db = SessionLocal()
-        try:
-            job_project = job_db.get(Project, project_id)
-            job_scenario = job_db.get(DesignScenario, scenario_id)
-            return await run_design_generation(job_db, job_project, job_scenario)
-        except Exception:
-            job_db.rollback()
-            job_scenario = job_db.get(DesignScenario, scenario_id)
-            if job_scenario is not None:
-                job_scenario.status = "failed"
-                job_db.commit()
-            raise
-        finally:
-            job_db.close()
-
-    job_id = jobs.submit(_job)
-    return {"job_id": job_id, "scenario_id": scenario_id, "status": "queued"}
+    job_id = jobs.submit_design_generation(
+        project_id=project_id,
+        scenario_id=scenario_id,
+        mode=mode,
+        user_id=user.id,
+    )
+    record_usage_event(
+        db,
+        user_id=user.id,
+        event_type="generation.started",
+        project_id=project_id,
+        metadata={"scenario_id": scenario_id, "job_id": job_id, "generation_mode": mode},
+    )
+    log_audit_event(
+        db,
+        user_id=user.id,
+        action="generation.started",
+        entity_type="job",
+        entity_id=job_id,
+        project_id=project_id,
+        metadata={"scenario_id": scenario_id, "generation_mode": mode},
+        request=request,
+    )
+    return {"job_id": job_id, "scenario_id": scenario_id, "status": "queued", "generation_mode": mode}
 
 
 @router.get("/scenarios")
@@ -64,25 +100,40 @@ def list_scenarios(
     db: Session = Depends(get_db),
     user_id: int = Depends(get_current_user_id),
 ):
-    get_owned_project(project_id, db, user_id)
+    project = get_owned_project(project_id, db, user_id)
     scenarios = (
         db.query(DesignScenario)
         .filter(DesignScenario.project_id == project_id)
         .order_by(DesignScenario.created_at.desc())
         .all()
     )
-    return [
-        {
-            "id": s.id,
-            "name": s.name,
-            "status": s.status,
-            "input_parameters_json": s.input_parameters_json,
-            "design_output_json": s.design_output_json,
-            "assumptions_json": s.assumptions_json,
-            "created_at": s.created_at,
-        }
-        for s in scenarios
-    ]
+    summaries = [build_scenario_summary(db, s, project) for s in scenarios]
+    return {"summaries": summaries, "scenarios": summaries}
+
+
+@router.get("/scenarios/{scenario_id}")
+def get_scenario_detail(
+    project_id: int,
+    scenario_id: int,
+    db: Session = Depends(get_db),
+    user_id: int = Depends(get_current_user_id),
+):
+    project = get_owned_project(project_id, db, user_id)
+    scenario = db.get(DesignScenario, scenario_id)
+    if scenario is None or scenario.project_id != project_id:
+        raise HTTPException(404, "Scenario not found")
+    return build_scenario_detail(db, scenario, project)
+
+
+@router.post("/scenarios/compare")
+def compare_project_scenarios(
+    project_id: int,
+    payload: CompareScenariosRequest,
+    db: Session = Depends(get_db),
+    user_id: int = Depends(get_current_user_id),
+):
+    project = get_owned_project(project_id, db, user_id)
+    return compare_scenarios(db, project, payload.scenario_ids)
 
 
 @router.put("/scenarios/{scenario_id}/assumptions")

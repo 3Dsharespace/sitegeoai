@@ -28,8 +28,8 @@ export function Tabs({
             "rounded-md font-medium transition-all duration-150",
             compact ? "px-2 py-1 text-[10px]" : "flex-1 px-3 py-1.5 text-xs",
             active === tab.id
-              ? "bg-[rgba(59,130,246,0.18)] text-foreground border border-primary/40"
-              : "text-muted-foreground hover:text-foreground hover:bg-[rgba(148,163,184,0.12)] border border-transparent",
+              ? "bg-[rgba(59,130,246,0.2)] text-[#38BDF8] border border-[rgba(59,130,246,0.4)] shadow-[0_0_16px_-4px_rgba(59,130,246,0.45)]"
+              : "text-[#94A3B8] hover:text-[#F8FAFC] hover:bg-white/[0.04] border border-transparent",
           )}
         >
           {tab.label}

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
-import { ChevronRight, Building2, Menu, Plus, X } from "lucide-react";
+import { ChevronRight, Building2, Download, Menu, Plus, Save, Settings, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -115,10 +115,10 @@ function SidebarContent({
           <Building2 className="h-4 w-4 text-primary-foreground" />
         </div>
         <div className="min-w-0 flex-1">
-          <Link href="/" className="font-semibold text-sm text-foreground tracking-tight" onClick={onNavigate}>
-            Planning Portal
+          <Link href="/" className="font-semibold text-sm text-foreground tracking-tight block leading-tight" onClick={onNavigate}>
+            GeoAI Studio
           </Link>
-          <p className="text-[10px] text-muted-foreground truncate">Infrastructure GIS</p>
+          <p className="text-[10px] text-muted-foreground truncate">Infrastructure planning</p>
         </div>
         <button
           type="button"
@@ -299,11 +299,11 @@ export default function DashboardShell({ children }: { children: React.ReactNode
       {/* Full-width main column — no sidebar gutter */}
       <div className="flex flex-1 flex-col min-w-0 w-full min-h-0 overflow-hidden">
         {!workspaceFullscreen && (
-          <header className="app-header sticky top-0 z-30 flex min-h-12 items-center gap-2 px-3 py-1.5">
+          <header className="app-header sticky top-0 z-30 flex min-h-12 items-center gap-2 border-b border-[rgba(148,163,184,0.16)] bg-[rgba(5,7,10,0.88)] px-3 py-1.5 shadow-[0_12px_32px_rgba(0,0,0,0.28)] backdrop-blur-xl">
             <Button
               variant="ghost"
               size="icon"
-              className="h-9 w-9 shrink-0"
+              className="h-9 w-9 shrink-0 text-[#CBD5E1] hover:bg-white/[0.06] hover:text-[#F8FAFC]"
               onClick={() => setNavOpen((o) => !o)}
               aria-label={navOpen ? "Close navigation" : "Open navigation"}
               aria-expanded={navOpen}
@@ -318,14 +318,56 @@ export default function DashboardShell({ children }: { children: React.ReactNode
                 compact
               />
             ) : (
-              <span className="hidden truncate text-sm font-medium text-foreground sm:inline">
-                Infrastructure Planning Portal
-              </span>
+              <div className="min-w-0 hidden sm:block">
+                <p className="text-sm font-semibold text-foreground truncate leading-tight">
+                  GeoAI Infrastructure Studio
+                </p>
+                <p className="text-[10px] text-muted-foreground truncate">
+                  AI-powered site planning and 3D infrastructure design
+                </p>
+              </div>
             )}
 
             <div className="ml-auto flex items-center gap-2 shrink-0">
+              {project && projectId && (
+                <div className="hidden items-center gap-1 md:flex">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 gap-1.5 px-2 text-[11px] text-[#CBD5E1] hover:bg-white/[0.06] hover:text-[#F8FAFC]"
+                    title="Geometry saves happen from the active drawing tools"
+                  >
+                    <Save className="h-3.5 w-3.5" />
+                    <span className="hidden xl:inline">Save</span>
+                  </Button>
+                  <Link href={`/projects/${projectId}/report`}>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-8 gap-1.5 px-2 text-[11px] text-[#CBD5E1] hover:bg-white/[0.06] hover:text-[#F8FAFC]"
+                    >
+                      <Download className="h-3.5 w-3.5" />
+                      <span className="hidden xl:inline">Export</span>
+                    </Button>
+                  </Link>
+                  <Link href="/settings">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-8 gap-1.5 px-2 text-[11px] text-[#CBD5E1] hover:bg-white/[0.06] hover:text-[#F8FAFC]"
+                    >
+                      <Settings className="h-3.5 w-3.5" />
+                      <span className="hidden xl:inline">Settings</span>
+                    </Button>
+                  </Link>
+                </div>
+              )}
               <Link href="/projects/new">
-                <Button size="sm" className="gap-1.5 h-8 text-xs">
+                <Button
+                  size="sm"
+                  className="gap-1.5 h-8 text-xs bg-gradient-to-r from-[#2563EB] via-[#3B82F6] to-[#22D3EE] border-0 shadow-[0_0_24px_-5px_rgba(59,130,246,0.7)] hover:brightness-110 hover:shadow-[0_0_30px_-4px_rgba(34,211,238,0.7)] transition-all"
+                >
                   <Plus className="h-3.5 w-3.5" />
                   <span className="hidden sm:inline">New Project</span>
                 </Button>
@@ -336,7 +378,10 @@ export default function DashboardShell({ children }: { children: React.ReactNode
 
         <PageTransition>{children}</PageTransition>
 
-        {!pathname?.includes("/workspace") && !pathname?.includes("/map") && (
+        {!pathname?.includes("/workspace") &&
+          !pathname?.includes("/map") &&
+          !pathname?.includes("/projects/new") &&
+          pathname !== "/dashboard" && (
           <div className="border-t border-border px-4 py-2 hidden lg:block panel">
             <DisclaimerBanner compact />
           </div>

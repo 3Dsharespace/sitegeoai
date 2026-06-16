@@ -3,7 +3,9 @@
 Productivity factors are editable placeholders, not scheduling truth.
 """
 
-# months per unit of work, by project type driver
+from app.core.project_catalog import project_type_family
+
+# months per unit of work, by project type driver (base families)
 DURATION_FACTORS = {
     "flyover": ("length_m", 0.018),    # ~18 months per km
     "building": ("floors", 2.5),       # ~2.5 months per floor
@@ -14,7 +16,8 @@ MOBILIZATION_MONTHS = 1.5
 
 
 def estimate_months(project_type: str, driver_value: float) -> dict:
-    _, factor = DURATION_FACTORS.get(project_type, ("", 0.01))
+    family = project_type_family(project_type)
+    _, factor = DURATION_FACTORS.get(family, ("", 0.01))
     duration = MOBILIZATION_MONTHS + driver_value * factor
     return {
         "estimated_months_medium": round(duration, 1),

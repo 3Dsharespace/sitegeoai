@@ -6,16 +6,20 @@ interface WorkspaceMapContextValue {
   focusMode: boolean;
   toolsOpen: boolean;
   copilotOpen: boolean;
+  copilotPanelVisible: boolean;
   onOpenTools: () => void;
   onOpenCopilot: () => void;
+  onToggleCopilotPanel: () => void;
 }
 
 const WorkspaceMapContext = createContext<WorkspaceMapContextValue>({
   focusMode: false,
   toolsOpen: false,
   copilotOpen: false,
+  copilotPanelVisible: true,
   onOpenTools: () => {},
   onOpenCopilot: () => {},
+  onToggleCopilotPanel: () => {},
 });
 
 export function WorkspaceMapProvider({

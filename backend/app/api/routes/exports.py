@@ -1,19 +1,31 @@
 import json
 
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from sqlalchemy.orm import Session
 
 from app.api.routes.estimates import latest_estimate
 from app.api.routes.projects import get_owned_project
 from app.core.disclaimer import DISCLAIMER
-from app.core.security import get_current_user_id
-from app.db.models import DesignScenario, GeneratedFile, SiteAnalysis
+from app.core.security import get_current_user, get_current_user_id
+from app.db.models import DesignScenario, GeneratedFile, SiteAnalysis, User
 from app.db.session import get_db
 from app.services.exports.csv_export import build_boq_csv
 from app.services.exports.geojson_export import build_geojson
 from app.services.exports.pdf_report import build_pdf
+from app.services.usage import enforce_usage_limit, record_usage_event
 
 router = APIRouter(prefix="/api/projects/{project_id}/exports", tags=["exports"])
+
+
+def _enforce_export(
+    db: Session,
+    user: User,
+    project_id: int,
+    event_type: str,
+    request: Request | None = None,
+) -> None:
+    enforce_usage_limit(db, user, event_type, project_id=project_id, request=request)
+    record_usage_event(db, user_id=user.id, event_type=event_type, project_id=project_id)
 
 
 def _latest_scenario(db: Session, project_id: int) -> DesignScenario | None:
@@ -35,8 +47,14 @@ def _latest_analysis(db: Session, project_id: int) -> SiteAnalysis | None:
 
 
 @router.get("/csv")
-def export_csv(project_id: int, db: Session = Depends(get_db), user_id: int = Depends(get_current_user_id)):
-    get_owned_project(project_id, db, user_id)
+def export_csv(
+    project_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    get_owned_project(project_id, db, user.id)
+    _enforce_export(db, user, project_id, "export.csv", request=request)
     estimate = latest_estimate(db, project_id)
     if estimate is None:
         fallback = "item_name,quantity,unit,rate,amount,note\n"
@@ -49,8 +67,14 @@ def export_csv(project_id: int, db: Session = Depends(get_db), user_id: int = De
 
 
 @router.get("/json")
-def export_json(project_id: int, db: Session = Depends(get_db), user_id: int = Depends(get_current_user_id)):
-    project = get_owned_project(project_id, db, user_id)
+def export_json(
+    project_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    project = get_owned_project(project_id, db, user.id)
+    _enforce_export(db, user, project_id, "export.json", request=request)
     scenario = _latest_scenario(db, project_id)
     analysis = _latest_analysis(db, project_id)
     estimate = latest_estimate(db, project_id)
@@ -95,18 +119,30 @@ def export_json(project_id: int, db: Session = Depends(get_db), user_id: int = D
 
 
 @router.get("/geojson")
-def export_geojson(project_id: int, db: Session = Depends(get_db), user_id: int = Depends(get_current_user_id)):
-    project = get_owned_project(project_id, db, user_id)
+def export_geojson(
+    project_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    project = get_owned_project(project_id, db, user.id)
+    _enforce_export(db, user, project_id, "export.json", request=request)
     data = build_geojson(project, _latest_analysis(db, project_id))
     return Response(data, media_type="application/geo+json",
                     headers={"Content-Disposition": f"attachment; filename=project_{project_id}.geojson"})
 
 
 @router.get("/pdf")
-def export_pdf(project_id: int, db: Session = Depends(get_db), user_id: int = Depends(get_current_user_id)):
+def export_pdf(
+    project_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
     from app.services.project_validation import validate_project
 
-    project = get_owned_project(project_id, db, user_id)
+    project = get_owned_project(project_id, db, user.id)
+    _enforce_export(db, user, project_id, "export.pdf", request=request)
     scenario = _latest_scenario(db, project_id)
     validation = validate_project(db, project)
     data = build_pdf(

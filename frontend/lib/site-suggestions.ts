@@ -5,6 +5,7 @@ import {
   polygonAreaSqm,
   rectanglePolygon,
 } from "@/lib/geo";
+import { projectTypeFamily } from "@/lib/project-catalog";
 import type { GeoJSONFeature, GeoJSONGeometry, ProjectType } from "@/lib/types";
 
 export interface SiteSuggestion {
@@ -63,12 +64,13 @@ export function generateSiteSuggestions(
   projectType: ProjectType,
   roads: GeoJSONFeature[] = [],
 ): SiteSuggestion[] {
+  const family = projectTypeFamily(projectType);
   const roadBearing = nearestRoadBearing(lng, lat, roads);
   const alignBearings = roadBearing != null ? [roadBearing, roadBearing + 90] : [0, 90, 45];
 
   const suggestions: SiteSuggestion[] = [];
 
-  if (projectType === "building") {
+  if (family === "building") {
     const presets: { w: number; h: number; label: string; reason: string }[] = [
       { w: 60, h: 45, label: "Compact plot", reason: "Suitable for mid-rise massing (~2,700 m²)" },
       { w: 100, h: 80, label: "Standard campus", reason: "Typical institutional / commercial block" },
@@ -89,9 +91,9 @@ export function generateSiteSuggestions(
     });
   }
 
-  if (projectType === "flyover" || projectType === "road") {
-    const length = projectType === "flyover" ? 650 : 500;
-    const width = projectType === "flyover" ? 45 : 35;
+  if (family === "flyover" || family === "road") {
+    const length = family === "flyover" ? 650 : 500;
+    const width = family === "flyover" ? 45 : 35;
     alignBearings.forEach((bearing, i) => {
       const geom = corridorPolygon(lng, lat, length, width, bearing);
       const ring = ringFromPolygon(geom)!;
@@ -120,7 +122,7 @@ export function generateSiteSuggestions(
     });
   }
 
-  if (projectType === "pipeline") {
+  if (family === "pipeline") {
     [600, 900].forEach((length, i) => {
       const bearing = alignBearings[i] ?? 0;
       const line = lineFromCenter(lng, lat, length, bearing);

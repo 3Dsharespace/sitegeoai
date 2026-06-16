@@ -109,6 +109,37 @@ export interface ProjectValidation {
   disclaimer: string;
 }
 
+export interface CopilotAction {
+  type: "update_parameters" | "run_site_analysis" | "generate_design" | "show_layer" | "download";
+  payload: Record<string, unknown>;
+}
+
+export interface CopilotStreamResult {
+  message?: string;
+  actions: CopilotAction[];
+  warnings: string[];
+  provider?: string;
+  action?: CopilotAction | null;
+  disclaimer?: string;
+}
+
+export interface UsageMetric {
+  current: number | null;
+  max: number | null;
+  unlimited?: boolean;
+  reset_at?: string | null;
+}
+
+export interface UsageSummary {
+  plan: string;
+  unlimited: boolean;
+  projects: UsageMetric;
+  generations_today: UsageMetric;
+  llm_plans_today: UsageMetric;
+  exports_today: UsageMetric;
+  limits: Record<string, number | null>;
+}
+
 export interface SystemStatus {
   database_type: string;
   postgis_available: boolean;
@@ -118,11 +149,21 @@ export interface SystemStatus {
   storage_mode: string;
   survey_mode_available: boolean;
   ai: {
+    configured_provider: string;
     active_provider: string;
     mock_mode: boolean;
     openai_configured: boolean;
     anthropic_configured: boolean;
     gemini_configured: boolean;
+    gemini_implemented?: boolean;
+    ollama: {
+      primary: boolean;
+      base_url: string;
+      model: string;
+      available: boolean;
+      model_ready: boolean;
+      installed_models: string[];
+    };
   };
   maps: {
     google_maps_configured: boolean;
@@ -130,10 +171,51 @@ export interface SystemStatus {
     cesium_ion_configured: boolean;
     osm_fallback: boolean;
   };
+  production?: {
+    environment: string;
+    auth_required: boolean;
+    auth_jwt_required: boolean;
+    auth_ready: boolean;
+    ownership_enforced: boolean;
+    file_access_mode: string;
+    roles_enabled: boolean;
+    audit_enabled: boolean;
+    admin_routes_protected: boolean;
+    usage_limits_enabled?: boolean;
+    rate_limiting_enabled?: boolean;
+    redis_rate_limit_backend?: boolean;
+    using_dev_secret: boolean;
+    generation_timeout_seconds: number;
+    warnings: { code: string; message: string; severity?: string }[];
+    warning_count: number;
+    critical_count: number;
+    production_ready: boolean;
+    deployment_ready: boolean;
+  };
+  observability?: {
+    structured_request_logging: boolean;
+    request_id_header: string;
+    sentry_enabled: boolean;
+    sentry_configured: boolean;
+  };
   disclaimer: string;
 }
 
-export type ProjectType = "flyover" | "building" | "pipeline" | "road";
+export type ProjectType =
+  | "flyover"
+  | "building"
+  | "pipeline"
+  | "road"
+  | "bridge"
+  | "interchange"
+  | "railway"
+  | "tunnel"
+  | "dam"
+  | "substation"
+  | "retaining_wall"
+  | "culvert"
+  | "wastewater"
+  | "solar_farm";
 
 export interface GeoJSONGeometry {
   type: string;
@@ -187,6 +269,129 @@ export interface DesignScenario {
   created_at: string;
 }
 
+export interface ScenarioSummary {
+  scenario_id: number;
+  name: string;
+  title?: string;
+  status: string;
+  created_at: string | null;
+  generation_mode?: string;
+  planning_mode?: string | null;
+  project_type?: string;
+  length_m?: number | null;
+  lanes?: number | null;
+  width_m?: number | null;
+  clearance_m?: number | null;
+  pier_spacing_m?: number | null;
+  cost_total?: number | null;
+  cost_currency?: string;
+  materials_summary?: Record<string, number | null>;
+  validation_status?: string | null;
+  validation_score?: number | null;
+  warning_count?: number;
+  error_count?: number;
+  geometry_mode?: string | null;
+  elevation_mode?: string | null;
+  max_grade_percent?: number | null;
+  model_url?: string | null;
+  preview_url?: string | null;
+  report_url?: string | null;
+  key_assumptions?: string[];
+}
+
+export interface ScenarioListResponse {
+  summaries: ScenarioSummary[];
+  scenarios: ScenarioSummary[];
+}
+
+export interface ScenarioCompareRow {
+  scenario_id: number;
+  name: string;
+  cost_total?: number | null;
+  validation_score?: number | null;
+  validation_status?: string | null;
+  length_m?: number | null;
+  width_m?: number | null;
+  lanes?: number | null;
+  pier_spacing_m?: number | null;
+  max_grade_percent?: number | null;
+  geometry_mode?: string | null;
+  elevation_mode?: string | null;
+  warning_count?: number;
+  error_count?: number;
+  recommendations?: string[];
+}
+
+export interface ScenarioCompareResult {
+  project_id: number;
+  scenario_ids: number[];
+  rows: ScenarioCompareRow[];
+  best_option_by: {
+    lowest_cost?: number | null;
+    highest_validation_score?: number | null;
+    fewest_warnings?: number | null;
+  };
+  notes: string[];
+}
+
+export interface GeometrySpecObject {
+  kind: "box" | "cylinder";
+  name: string;
+  layer: string;
+}
+
+export interface GeometrySpec {
+  objects: GeometrySpecObject[];
+  frame?: string;
+  length_m?: number;
+  geometry_mode?: "alignment" | "straight";
+  elevation_mode?: "profile" | "flat";
+  elevation_assumed?: boolean;
+  elevation_provider?: string;
+  min_elevation_m?: number;
+  max_elevation_m?: number;
+  max_grade_percent?: number;
+}
+
+export interface DesignValidationResult {
+  validation_status: "pass" | "warning" | "fail";
+  score: number;
+  warnings: { code: string; message: string; field?: string | null }[];
+  errors: { code: string; message: string; field?: string | null }[];
+  recommendations: { code: string; message: string }[];
+  assumptions: string[];
+  conceptual_disclaimer?: string;
+}
+
+export interface DesignReviewSummary {
+  project_type?: string;
+  final_parameters?: Record<string, unknown>;
+  geometry_mode?: string;
+  elevation_mode?: string;
+  max_grade_percent?: number;
+  alignment_based?: boolean;
+  elevation_aware?: boolean;
+  planning_mode?: string;
+  validation_status?: string;
+  validation_score?: number;
+  warnings?: string[];
+  errors?: string[];
+  recommendations?: string[];
+  assumptions?: string[];
+  conceptual_disclaimer?: string;
+  not_for_construction?: boolean;
+}
+
+export interface DesignPlanningMetadata {
+  planning_mode?: "llm" | "template" | "fallback";
+  llm_provider?: string | null;
+  llm_model?: string | null;
+  design_assumptions?: string[];
+  design_warnings?: string[];
+  missing_inputs?: { field: string; reason: string }[];
+  final_parameters?: Record<string, unknown>;
+}
+
 export interface DesignOutput {
   project_type: string;
   summary: string;
@@ -199,6 +404,10 @@ export interface DesignOutput {
   required_engineer_review: boolean;
   required_permissions: string[];
   ai_provider?: string;
+  geometry_spec?: GeometrySpec;
+  planning?: DesignPlanningMetadata;
+  validation?: DesignValidationResult;
+  design_review?: DesignReviewSummary;
   calculated?: {
     quantities: Record<string, number>;
     derived: Record<string, unknown>;
@@ -250,10 +459,46 @@ export interface QuantityEstimate {
 
 export interface JobStatus {
   job_id: string;
-  status: "queued" | "running" | "completed" | "failed";
+  status: "queued" | "running" | "completed" | "failed" | "cancelled";
+  stage?: import("@/lib/generation-job").JobStage;
+  stage_label?: string;
+  progress?: number;
+  message?: string | null;
+  preview_ready?: boolean;
+  preview_glb_url?: string | null;
+  /** Populated on completed jobs — same as `result.glb_url` when present. */
+  final_glb_url?: string | null;
   result: Record<string, unknown> | null;
   error: string | null;
+  error_type?: string | null;
+  safe_error_message?: string | null;
+  failed_stage?: string | null;
+  retryable?: boolean;
+  created_at?: string | null;
+  updated_at?: string | null;
+  duration_ms?: number | null;
+  timings?: Record<string, number> | null;
+  diagnostics?: JobDiagnostics | null;
 }
+
+export interface JobDiagnostics {
+  total_duration_ms?: number | null;
+  llm_planning_ms?: number | null;
+  elevation_sampling_ms?: number | null;
+  glb_preview_ms?: number | null;
+  glb_final_ms?: number | null;
+  boq_ms?: number | null;
+  validation_ms?: number | null;
+  file_save_ms?: number | null;
+  provider?: string | null;
+  generation_mode?: string | null;
+  failure_reason?: string | null;
+  failed_stage?: string | null;
+  cancelled?: boolean;
+  timings_ms?: Record<string, number> | null;
+}
+
+export type GenerationMode = import("@/lib/generation-job").GenerationMode;
 
 export interface GeneratedFileInfo {
   id: number;

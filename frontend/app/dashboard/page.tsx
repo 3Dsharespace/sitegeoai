@@ -4,13 +4,11 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import {
   ArrowRight,
-  Box,
   Check,
   Circle,
   FolderOpen,
   MapPin,
   Plus,
-  Sparkles,
   Trash2,
 } from "lucide-react";
 import DisclaimerBanner from "@/components/DisclaimerBanner";
@@ -19,9 +17,9 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { computeHealth, type ProjectHealth } from "@/lib/project-workflow";
-import { useDemoProjectId } from "@/lib/useDemoProjectId";
 import { api } from "@/lib/api";
-import type { DesignScenario, Project, SiteAnalysis } from "@/lib/types";
+import { parseScenarioList } from "@/lib/scenario-api";
+import type { DesignScenario, Project, ScenarioListResponse, ScenarioSummary, SiteAnalysis } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 const TYPE_VARIANT: Record<string, "primary" | "accent" | "warning" | "success"> = {
@@ -45,19 +43,30 @@ async function fetchProjectHealth(project: Project): Promise<ProjectHealth> {
   let hasEstimate = false;
   let hasAnalysis = false;
   try {
-    scenarios = await api.get<DesignScenario[]>(`/api/projects/${project.id}/scenarios`);
+    const scenarioRes = await api.get<ScenarioListResponse | ScenarioSummary[]>(
+      `/api/projects/${project.id}/scenarios`,
+    );
+    scenarios = parseScenarioList(scenarioRes).map((s) => ({
+      id: s.scenario_id,
+      name: s.name,
+      status: s.status,
+      created_at: s.created_at ?? "",
+      input_parameters_json: null,
+      design_output_json: s.status === "completed" ? ({} as DesignScenario["design_output_json"]) : null,
+      assumptions_json: null,
+    }));
   } catch {
     /* ignore */
   }
   try {
-    await api.get(`/api/projects/${project.id}/estimates`);
-    hasEstimate = true;
+    const estimate = await api.getOptional(`/api/projects/${project.id}/estimates`);
+    hasEstimate = estimate != null;
   } catch {
     /* ignore */
   }
   try {
-    await api.get<SiteAnalysis>(`/api/projects/${project.id}/site-analysis`);
-    hasAnalysis = true;
+    const analysis = await api.getOptional<SiteAnalysis>(`/api/projects/${project.id}/site-analysis`);
+    hasAnalysis = analysis != null;
   } catch {
     /* ignore */
   }
@@ -127,7 +136,6 @@ async function loadProjectsWithHealth() {
 }
 
 export default function DashboardPage() {
-  const demoId = useDemoProjectId();
   const [projects, setProjects] = useState<Project[] | null>(null);
   const [healthMap, setHealthMap] = useState<Record<number, ProjectHealth>>({});
   const [error, setError] = useState<string | null>(null);
@@ -150,6 +158,13 @@ export default function DashboardPage() {
     load();
   };
 
+  const removeAll = async () => {
+    if (!projects?.length) return;
+    if (!confirm(`Delete all ${projects.length} projects and their data? This cannot be undone.`)) return;
+    await Promise.all(projects.map((project) => api.delete(`/api/projects/${project.id}`)));
+    load();
+  };
+
   return (
     <div className="flex-1 overflow-y-auto">
       <div className="max-w-6xl mx-auto px-6 py-8 space-y-8">
@@ -166,6 +181,12 @@ export default function DashboardPage() {
               New Project
             </Button>
           </Link>
+          {projects && projects.length > 0 && (
+            <Button variant="destructive" className="gap-2" onClick={removeAll}>
+              <Trash2 className="h-4 w-4" />
+              Clear Projects
+            </Button>
+          )}
         </div>
 
         {error && (
@@ -185,28 +206,6 @@ export default function DashboardPage() {
                 </div>
                 <CardTitle>New Project</CardTitle>
                 <CardDescription>Select a site and start planning</CardDescription>
-              </CardHeader>
-            </Card>
-          </Link>
-          <Link href={`/projects/${demoId}/workspace`}>
-            <Card float className="hover:border-primary/40 cursor-pointer h-full group">
-              <CardHeader>
-                <div className="flex h-10 w-10 items-center justify-center bg-accent/10 group-hover:bg-accent/15 transition-colors">
-                  <Sparkles className="h-5 w-5 text-accent" />
-                </div>
-                <CardTitle>Demo Project</CardTitle>
-                <CardDescription>Explore Bengaluru flyover sample</CardDescription>
-              </CardHeader>
-            </Card>
-          </Link>
-          <Link href={`/projects/${demoId}/model`}>
-            <Card float className="hover:border-primary/40 cursor-pointer h-full group">
-              <CardHeader>
-                <div className="flex h-10 w-10 items-center justify-center bg-muted group-hover:bg-muted/80 transition-colors">
-                  <Box className="h-5 w-5 text-accent" />
-                </div>
-                <CardTitle>3D Model Viewer</CardTitle>
-                <CardDescription>Inspect layers and structure</CardDescription>
               </CardHeader>
             </Card>
           </Link>
@@ -231,18 +230,11 @@ export default function DashboardPage() {
               <MapPin className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
               <p className="font-medium mb-1">No projects yet</p>
               <p className="text-sm text-muted-foreground mb-4">
-                Create your first preliminary plan or explore the demo project.
+                Create your first preliminary plan to start a clean workspace.
               </p>
-              <div className="flex justify-center gap-3">
-                <Link href="/projects/new">
-                  <Button size="sm">Create Project</Button>
-                </Link>
-                <Link href={`/projects/${demoId}/workspace`}>
-                  <Button size="sm" variant="outline">
-                    View Demo
-                  </Button>
-                </Link>
-              </div>
+              <Link href="/projects/new">
+                <Button size="sm">Create Project</Button>
+              </Link>
             </Card>
           )}
 

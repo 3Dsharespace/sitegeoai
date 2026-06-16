@@ -4,8 +4,13 @@ from fastapi import APIRouter
 
 from app.core.config import settings
 from app.core.disclaimer import DISCLAIMER
+from app.core.request_context import REQUEST_ID_HEADER
+from app.core.sentry import sentry_enabled
 from app.db.session import IS_POSTGRES
 from app.services import jobs, storage
+from app.services.ai.ollama_client import check_ollama_available
+from app.services.ai.providers import normalize_ai_provider
+from app.core.production import production_readiness
 
 router = APIRouter(prefix="/api/system", tags=["system"])
 
@@ -18,21 +23,42 @@ def _storage_mode() -> str:
     return "s3" if storage._get_s3() is not None else "local"
 
 
-def _ai_provider_status() -> dict:
-    if settings.OPENAI_API_KEY:
+async def _ai_provider_status() -> dict:
+    configured = normalize_ai_provider()
+    ollama = await check_ollama_available()
+
+    # Active = configured primary when reachable, else first fallback
+    if configured == "ollama" and ollama["available"]:
+        active = "ollama"
+    elif configured == "openai" and settings.OPENAI_API_KEY:
+        active = "openai"
+    elif configured == "anthropic" and settings.ANTHROPIC_API_KEY:
+        active = "anthropic"
+    elif settings.OPENAI_API_KEY:
         active = "openai"
     elif settings.ANTHROPIC_API_KEY:
         active = "anthropic"
-    elif settings.GEMINI_API_KEY:
-        active = "gemini"
+    elif ollama["available"]:
+        active = "ollama"
     else:
         active = "mock"
+
     return {
+        "configured_provider": configured,
         "active_provider": active,
         "mock_mode": active == "mock",
         "openai_configured": bool(settings.OPENAI_API_KEY),
         "anthropic_configured": bool(settings.ANTHROPIC_API_KEY),
         "gemini_configured": bool(settings.GEMINI_API_KEY),
+        "gemini_implemented": False,
+        "ollama": {
+            "primary": configured == "ollama",
+            "base_url": settings.OLLAMA_BASE_URL,
+            "model": settings.OLLAMA_MODEL,
+            "available": ollama["available"],
+            "model_ready": ollama.get("configured_model_ready", False),
+            "installed_models": ollama.get("models", []),
+        },
     }
 
 
@@ -46,7 +72,7 @@ def _map_provider_status() -> dict:
 
 
 @router.get("/status")
-def system_status():
+async def system_status():
     postgis = IS_POSTGRES
     return {
         "database_type": "postgresql" if postgis else "sqlite",
@@ -56,7 +82,14 @@ def system_status():
         "job_store": "redis" if _redis_available() else "in_memory",
         "storage_mode": _storage_mode(),
         "survey_mode_available": postgis,
-        "ai": _ai_provider_status(),
+        "ai": await _ai_provider_status(),
         "maps": _map_provider_status(),
+        "observability": {
+            "structured_request_logging": True,
+            "request_id_header": REQUEST_ID_HEADER,
+            "sentry_enabled": sentry_enabled(),
+            "sentry_configured": bool(settings.SENTRY_DSN),
+        },
+        "production": production_readiness(),
         "disclaimer": DISCLAIMER,
     }

@@ -1,17 +1,18 @@
 import hashlib
 import json
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
 from app.core.disclaimer import DISCLAIMER
-from app.core.security import get_current_user_id
+from app.core.security import get_current_user, get_current_user_id
 from app.api.routes.projects import get_owned_project
-from app.db.models import SiteAnalysis
+from app.db.models import SiteAnalysis, User
 from app.db.session import get_db
 from app.services.geospatial import spatial_analysis, terrain
 from app.services.geospatial.osm_overpass import fetch_osm_features
 from app.services.jobs import _get_redis
+from app.services.usage import enforce_usage_limit, record_usage_event
 
 router = APIRouter(prefix="/api/projects/{project_id}/site-analysis", tags=["site-analysis"])
 
@@ -39,10 +40,12 @@ def _analysis_out(a: SiteAnalysis) -> dict:
 @router.post("")
 async def run_site_analysis(
     project_id: int,
+    request: Request,
     db: Session = Depends(get_db),
-    user_id: int = Depends(get_current_user_id),
+    user: User = Depends(get_current_user),
 ):
-    project = get_owned_project(project_id, db, user_id)
+    project = get_owned_project(project_id, db, user.id)
+    enforce_usage_limit(db, user, "site_analysis.run", project_id=project.id, request=request)
     geojson = project.boundary_geojson or project.alignment_geojson
     if geojson is None:
         raise HTTPException(422, "Project has no boundary polygon or alignment; draw one first")
@@ -113,6 +116,13 @@ async def run_site_analysis(
     project.status = "analyzed"
     db.commit()
     db.refresh(analysis)
+    record_usage_event(
+        db,
+        user_id=user.id,
+        event_type="site_analysis.run",
+        project_id=project.id,
+        metadata={"analysis_id": analysis.id},
+    )
     return _analysis_out(analysis)
 
 
@@ -162,5 +172,5 @@ def get_latest_analysis(
         .first()
     )
     if analysis is None:
-        raise HTTPException(404, "No site analysis yet")
+        return None
     return _analysis_out(analysis)

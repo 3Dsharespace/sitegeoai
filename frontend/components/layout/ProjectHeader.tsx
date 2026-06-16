@@ -1,16 +1,34 @@
 "use client";
 
 import Link from "next/link";
-import { Loader2 } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
+import { CircleDot, Loader2 } from "lucide-react";
 import type { Project } from "@/lib/types";
+import { cn } from "@/lib/utils";
 
-const TYPE_VARIANT: Record<string, "primary" | "accent" | "warning" | "success"> = {
-  flyover: "primary",
-  building: "accent",
-  pipeline: "warning",
-  road: "success",
-};
+function ProjectStatusPill({
+  children,
+  tone = "neutral",
+}: {
+  children: React.ReactNode;
+  tone?: "neutral" | "blue" | "warning";
+}) {
+  return (
+    <span
+      className={cn(
+        "inline-flex h-5 shrink-0 items-center gap-1 rounded-full border px-2 text-[10px] font-medium leading-none",
+        tone === "blue" &&
+          "border-[rgba(59,130,246,0.35)] bg-[rgba(59,130,246,0.14)] text-[#BFDBFE]",
+        tone === "warning" &&
+          "border-[rgba(245,158,11,0.35)] bg-[rgba(245,158,11,0.12)] text-[#FCD34D]",
+        tone === "neutral" &&
+          "border-[rgba(148,163,184,0.18)] bg-[rgba(15,23,42,0.72)] text-[#CBD5E1]",
+      )}
+    >
+      {tone === "blue" && <CircleDot className="h-2.5 w-2.5 fill-[#3B82F6] text-[#3B82F6]" />}
+      {children}
+    </span>
+  );
+}
 
 export function ProjectHeaderContent({
   project,
@@ -25,29 +43,29 @@ export function ProjectHeaderContent({
 }) {
   return (
     <div className="min-w-0 flex-1">
-      <div className="flex items-center gap-2 flex-wrap">
+      <div className="flex items-center gap-2 overflow-hidden">
         <h1
           className={
             compact
-              ? "font-semibold text-sm tracking-tight truncate"
-              : "font-semibold text-base tracking-tight truncate"
+              ? "min-w-0 font-semibold text-sm tracking-tight text-[#F8FAFC] truncate"
+              : "min-w-0 font-semibold text-base tracking-tight text-[#F8FAFC] truncate"
           }
         >
           {title ?? project.name}
         </h1>
-        <Badge variant={TYPE_VARIANT[project.project_type] ?? "default"} className="text-[10px]">
-          {project.project_type}
-        </Badge>
-        <Badge variant="secondary" className="text-[10px]">
-          {project.status}
-        </Badge>
+        {compact && (
+          <div className="hidden items-center gap-1.5 xl:flex">
+            <ProjectStatusPill tone="blue">Visual planning</ProjectStatusPill>
+            <ProjectStatusPill>Preliminary</ProjectStatusPill>
+          </div>
+        )}
       </div>
       {(subtitle || project.location_name) && (
         <p
           className={
             compact
-              ? "text-[10px] text-muted-foreground truncate mt-0.5"
-              : "text-xs text-muted-foreground truncate mt-0.5"
+              ? "text-[10px] text-[#94A3B8] truncate mt-0.5"
+              : "text-xs text-[#94A3B8] truncate mt-0.5"
           }
         >
           {subtitle ?? project.location_name}

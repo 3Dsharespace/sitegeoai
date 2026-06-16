@@ -8,7 +8,6 @@ import { type Scene3DMeasureTool, useProjectStore } from "@/stores/projectStore"
 
 const LAYER_ORDER: Scene3DLayerKey[] = [
   "terrain",
-  "mountains",
   "roads",
   "buildings",
   "flyover",

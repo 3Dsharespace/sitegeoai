@@ -182,32 +182,78 @@ def _seed_site_analysis(db: Session, project: Project) -> None:
     )
 
 
+def _sync_demo_site_geometry(db: Session, project: Project) -> None:
+    """Backfill demo boundary/alignment when an older row was seeded without them."""
+    updated = False
+    if not project.boundary_geojson:
+        project.boundary_geojson = DEMO_BOUNDARY
+        updated = True
+    if not project.alignment_geojson:
+        project.alignment_geojson = DEMO_ALIGNMENT
+        updated = True
+    if project.center_lat is None or project.center_lng is None:
+        project.center_lat = 12.97175
+        project.center_lng = 77.59475
+        updated = True
+    if not project.location_name:
+        project.location_name = "MG Road area, Bengaluru, India"
+        updated = True
+    if updated:
+        db.flush()
+    boundary = project.boundary_geojson or DEMO_BOUNDARY
+    _sync_postgis_boundary(db, project.id, boundary)
+
+
 def ensure_demo_project(db: Session) -> Project | None:
+    """Legacy dev seed — demo owned by user 1 with fixed id when possible."""
+    return ensure_demo_project_for_user(db, 1)
+
+
+def ensure_demo_project_for_user(db: Session, user_id: int) -> Project | None:
     from app.db.models import Project
 
-    project = db.get(Project, DEMO_PROJECT_ID)
-    if project and project.name == DEMO_NAME:
-        _seed_site_analysis(db, project)
-        _seed_demo_design(db, project)
-        _sync_postgis_boundary(db, project.id, DEMO_BOUNDARY)
-        return project
-
-    by_name = db.query(Project).filter(Project.name == DEMO_NAME).first()
+    by_name = (
+        db.query(Project)
+        .filter(Project.user_id == user_id, Project.name == DEMO_NAME)
+        .first()
+    )
     if by_name:
+        _sync_demo_site_geometry(db, by_name)
         _seed_site_analysis(db, by_name)
         _seed_demo_design(db, by_name)
-        if by_name.boundary_geojson:
-            _sync_postgis_boundary(db, by_name.id, by_name.boundary_geojson)
-        logger.info("Demo project exists as id=%s (frontend links use id=%s)", by_name.id, DEMO_PROJECT_ID)
         return by_name
 
-    if project:
-        logger.warning("Project id=%s exists but is not the demo; skipping demo seed", DEMO_PROJECT_ID)
-        return None
+    if user_id == 1:
+        project = db.get(Project, DEMO_PROJECT_ID)
+        if project and project.name == DEMO_NAME and project.user_id == user_id:
+            _sync_demo_site_geometry(db, project)
+            _seed_site_analysis(db, project)
+            _seed_demo_design(db, project)
+            return project
+        if project is None:
+            project = Project(
+                id=DEMO_PROJECT_ID,
+                user_id=user_id,
+                name=DEMO_NAME,
+                project_type="flyover",
+                status="draft",
+                units="metric",
+                location_name="MG Road area, Bengaluru, India",
+                center_lat=12.97175,
+                center_lng=77.59475,
+                boundary_geojson=DEMO_BOUNDARY,
+                alignment_geojson=DEMO_ALIGNMENT,
+            )
+            db.add(project)
+            db.flush()
+            _seed_site_analysis(db, project)
+            _seed_demo_design(db, project)
+            _sync_postgis_boundary(db, project.id, DEMO_BOUNDARY)
+            logger.info("Seeded demo project id=%s for user %s", DEMO_PROJECT_ID, user_id)
+            return project
 
     project = Project(
-        id=DEMO_PROJECT_ID,
-        user_id=1,
+        user_id=user_id,
         name=DEMO_NAME,
         project_type="flyover",
         status="draft",
@@ -223,5 +269,5 @@ def ensure_demo_project(db: Session) -> Project | None:
     _seed_site_analysis(db, project)
     _seed_demo_design(db, project)
     _sync_postgis_boundary(db, project.id, DEMO_BOUNDARY)
-    logger.info("Seeded demo project id=%s", DEMO_PROJECT_ID)
+    logger.info("Seeded demo project id=%s for user %s", project.id, user_id)
     return project

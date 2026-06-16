@@ -62,6 +62,26 @@ def _migrate_sqlite_schema() -> None:
     if IS_POSTGRES:
         return
     with engine.connect() as conn:
+        has_users = conn.execute(
+            text("SELECT 1 FROM sqlite_master WHERE type='table' AND name='users'")
+        ).fetchone()
+        if has_users:
+            rows = conn.execute(text("PRAGMA table_info(users)")).fetchall()
+            user_cols = {row[1] for row in rows}
+            if "password_hash" not in user_cols:
+                conn.execute(text("ALTER TABLE users ADD COLUMN password_hash VARCHAR(255)"))
+            if "role" not in user_cols:
+                conn.execute(text("ALTER TABLE users ADD COLUMN role VARCHAR(20) DEFAULT 'user' NOT NULL"))
+                conn.execute(text("UPDATE users SET role = 'admin' WHERE id = 1"))
+            if "plan" not in user_cols:
+                conn.execute(text("ALTER TABLE users ADD COLUMN plan VARCHAR(20) DEFAULT 'free' NOT NULL"))
+                conn.execute(text("UPDATE users SET plan = 'admin' WHERE role = 'admin'"))
+        has_projects = conn.execute(
+            text("SELECT 1 FROM sqlite_master WHERE type='table' AND name='projects'")
+        ).fetchone()
+        if not has_projects:
+            conn.commit()
+            return
         rows = conn.execute(text("PRAGMA table_info(projects)")).fetchall()
         existing = {row[1] for row in rows}
         additions = {
@@ -87,6 +107,9 @@ def init_db() -> None:
             conn.commit()
             # Add survey columns to existing projects table if missing
             for col_sql in (
+                "ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash VARCHAR(255)",
+                "ALTER TABLE users ADD COLUMN IF NOT EXISTS role VARCHAR(20) DEFAULT 'user' NOT NULL",
+                "ALTER TABLE users ADD COLUMN IF NOT EXISTS plan VARCHAR(20) DEFAULT 'free' NOT NULL",
                 "ALTER TABLE projects ADD COLUMN IF NOT EXISTS engineering_crs_epsg INTEGER",
                 "ALTER TABLE projects ADD COLUMN IF NOT EXISTS accuracy_tier VARCHAR(32) DEFAULT 'visual'",
                 "ALTER TABLE projects ADD COLUMN IF NOT EXISTS origin_lat DOUBLE PRECISION",
@@ -104,7 +127,15 @@ def init_db() -> None:
     db: Session = SessionLocal()
     try:
         if db.query(User).count() == 0:
-            db.add(User(id=1, name="Dev User", email="dev@example.com"))
+            db.add(User(id=1, name="Dev User", email="dev@example.com", role="admin", plan="admin"))
+        else:
+            dev_user = db.get(User, 1)
+            if dev_user is not None:
+                if not dev_user.role or dev_user.role == "user":
+                    dev_user.role = "admin"
+                if not dev_user.plan or dev_user.plan == "free":
+                    if dev_user.role == "admin":
+                        dev_user.plan = "admin"
         if db.query(RateItem).count() == 0:
             for code, name, unit, rate in DEFAULT_RATES:
                 db.add(RateItem(region="default", item_code=code, item_name=name, unit=unit, rate=rate))

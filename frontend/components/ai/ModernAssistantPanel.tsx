@@ -1,28 +1,28 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { usePathname } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
 import {
-  AlertTriangle,
   ArrowRight,
+  ArrowUp,
   Bot,
   ChevronDown,
-  Clock,
-  DollarSign,
-  Layers,
-  MapPin,
-  Send,
+  Circle,
+  PanelRightClose,
+  Paperclip,
   Sparkles,
-  User,
+  Zap,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import { apiUrl, streamChat } from "@/lib/api";
-import type { DesignOutput } from "@/lib/types";
+import type { CopilotAction, DesignOutput } from "@/lib/types";
 import { cn, formatCurrency } from "@/lib/utils";
+import BlenderLayerPanel from "@/components/map/BlenderLayerPanel";
+import { useWorkspaceMap } from "@/components/layout/WorkspaceMapContext";
+import { PanelResizeHandle } from "@/components/ui/panel-resize-handle";
+import { useVerticalSplitResize } from "@/hooks/usePointerResize";
 import { useProjectStore } from "@/stores/projectStore";
 
 interface ChatEntry {
@@ -30,6 +30,9 @@ interface ChatEntry {
   text: string;
   design?: DesignOutput | null;
   cardType?: ResponseCardType;
+  actions?: CopilotAction[];
+  warnings?: string[];
+  provider?: string;
 }
 
 type ResponseCardType =
@@ -40,58 +43,14 @@ type ResponseCardType =
   | "design"
   | "timeline";
 
-interface AssistantAction {
-  type: "update_parameters" | "regenerate" | "show_layer" | "download";
-  parameters?: Record<string, unknown>;
-  layer?: string;
-  export?: string;
+interface Props {
+  projectId: number;
+  design?: DesignOutput | null;
+  onApplyParameters: (params: Record<string, unknown>) => void;
+  onRegenerate: (params: Record<string, unknown>) => void;
+  onRunSiteAnalysis?: () => Promise<void>;
+  currentParameters?: Record<string, unknown> | null;
 }
-
-const SUGGESTIONS_BY_PAGE: Record<string, string[]> = {
-  map: [
-    "Suggest best site for this project type",
-    "Analyze nearby roads and buildings",
-    "Import alignment and check elevation",
-    "Draw boundary along road corridor",
-  ],
-  estimate: [
-    "Estimate cement and steel quantities",
-    "Reduce total BOQ cost",
-    "Explain cost range assumptions",
-    "Export BOQ to CSV",
-  ],
-  workspace: [
-    "Design a 2-lane flyover",
-    "Change pier spacing to 35m",
-    "Analyze this site for risks",
-    "Generate cost breakdown",
-  ],
-  default: [
-    "Analyze this site for risks",
-    "Design a 2-lane flyover",
-    "Estimate cement and steel quantities",
-    "Generate cost breakdown",
-  ],
-};
-
-function pageKey(pathname: string): string {
-  if (pathname.includes("/map")) return "map";
-  if (pathname.includes("/estimate")) return "estimate";
-  if (pathname.includes("/workspace")) return "workspace";
-  return "default";
-}
-
-const CARD_META: Record<
-  ResponseCardType,
-  { title: string; icon: React.ComponentType<{ className?: string }> }
-> = {
-  "site-analysis": { title: "Site Analysis", icon: MapPin },
-  risk: { title: "Risk Assessment", icon: AlertTriangle },
-  materials: { title: "Material Estimate", icon: Layers },
-  cost: { title: "Cost Estimate", icon: DollarSign },
-  design: { title: "Design Suggestions", icon: Sparkles },
-  timeline: { title: "Construction Timeline", icon: Clock },
-};
 
 function inferCardType(text: string): ResponseCardType | undefined {
   const t = text.toLowerCase();
@@ -104,12 +63,36 @@ function inferCardType(text: string): ResponseCardType | undefined {
   return undefined;
 }
 
-interface Props {
-  projectId: number;
-  design?: DesignOutput | null;
-  onApplyParameters: (params: Record<string, unknown>) => void;
-  onRegenerate: (params: Record<string, unknown>) => void;
-  currentParameters?: Record<string, unknown> | null;
+function actionLabel(action: CopilotAction): string {
+  switch (action.type) {
+    case "update_parameters":
+      return "Apply parameter changes";
+    case "run_site_analysis":
+      return "Run site analysis";
+    case "generate_design":
+      return "Generate preliminary design";
+    case "show_layer":
+      return `Show layer: ${String(action.payload.layer ?? "layer")}`;
+    case "download":
+      return `Download ${String(action.payload.export ?? "file")}`;
+    default:
+      return "Confirm action";
+  }
+}
+
+function actionDescription(action: CopilotAction): string {
+  if (action.type === "update_parameters") {
+    const keys = Object.keys(action.payload);
+    if (!keys.length) return "Merge suggested parameters into the workspace.";
+    return keys.map((k) => `${k}: ${String(action.payload[k])}`).join(" · ");
+  }
+  if (action.type === "run_site_analysis") {
+    return "Analyze boundary/alignment for elevation, OSM context, and risks.";
+  }
+  if (action.type === "generate_design") {
+    return "Queue design generation with current parameters (BOQ from backend calculators).";
+  }
+  return "Review and confirm before applying.";
 }
 
 export default function ModernAssistantPanel({
@@ -117,75 +100,116 @@ export default function ModernAssistantPanel({
   design,
   onApplyParameters,
   onRegenerate,
+  onRunSiteAnalysis,
   currentParameters,
 }: Props) {
-  const pathname = usePathname();
-  const suggestions = SUGGESTIONS_BY_PAGE[pageKey(pathname)] ?? SUGGESTIONS_BY_PAGE.default;
-  const [pendingDiff, setPendingDiff] = useState<Record<string, { from: unknown; to: unknown }> | null>(null);
+  const [pendingActions, setPendingActions] = useState<CopilotAction[]>([]);
   const [history, setHistory] = useState<ChatEntry[]>([
     {
       role: "assistant",
-      text: "GeoAI Copilot ready. Ask for site analysis, preliminary designs, BOQ estimates, cost ranges, or construction timelines.",
+      text: "GeoAI Copilot ready. Ask for site analysis, parameter suggestions, or help regenerating a preliminary design.",
       cardType: "design",
     },
   ]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
+  const [useMapContext, setUseMapContext] = useState(true);
   const [expanded, setExpanded] = useState<Record<number, boolean>>({});
   const scrollRef = useRef<HTMLDivElement>(null);
+  const splitContainerRef = useRef<HTMLDivElement>(null);
+  const { size: layersHeight, onResizePointerDown } = useVerticalSplitResize({
+    storageKey: "geoai-copilot-layers-height",
+    defaultSize: 240,
+    minSize: 120,
+    minOtherSize: 220,
+    containerRef: splitContainerRef,
+  });
   const toggleLayer = useProjectStore((s) => s.toggleLayer);
   const layers = useProjectStore((s) => s.layers);
+  const { onToggleCopilotPanel, copilotPanelVisible } = useWorkspaceMap();
 
   const hasUserMessages = history.some((e) => e.role === "user");
 
-  const send = async (message?: string) => {
-    const text = (message ?? input).trim();
+  const SUGGESTED_PROMPTS = [
+    "Suggest flyover parameters",
+    "Run site analysis",
+    "How can I reduce cost?",
+    "Regenerate design",
+    "What are the main risks?",
+    "Estimate construction timeline",
+    "Explain BOQ",
+  ] as const;
+
+  const applyPrompt = (text: string) => {
+    setInput(text);
+  };
+
+  const confirmAction = async (action: CopilotAction) => {
+    if (action.type === "update_parameters") {
+      onApplyParameters(action.payload);
+    } else if (action.type === "generate_design") {
+      onRegenerate(currentParameters ?? action.payload ?? {});
+    } else if (action.type === "run_site_analysis" && onRunSiteAnalysis) {
+      await onRunSiteAnalysis();
+    } else if (action.type === "show_layer" && action.payload.layer === "excavation" && !layers.excavation) {
+      toggleLayer("excavation");
+    } else if (action.type === "download" && action.payload.export) {
+      window.open(apiUrl(`/api/projects/${projectId}/exports/${action.payload.export}`), "_blank");
+    }
+    setPendingActions((prev) => prev.filter((a) => a !== action));
+  };
+
+  const send = async () => {
+    const text = input.trim();
     if (!text || busy) return;
     setInput("");
     setHistory((h) => [...h, { role: "user", text }]);
     setBusy(true);
-    setPendingDiff(null);
+    setPendingActions([]);
     const streamIdx = history.length + 1;
     setHistory((h) => [...h, { role: "assistant", text: "", cardType: inferCardType(text) }]);
 
     try {
       let fullReply = "";
-      const { action } = await streamChat(projectId, text, (chunk) => {
+      const result = await streamChat(projectId, text, (chunk) => {
         fullReply += chunk;
         setHistory((h) =>
           h.map((entry, i) => (i === streamIdx ? { ...entry, text: fullReply } : entry)),
         );
       });
 
+      const actions = result.actions?.length
+        ? result.actions
+        : result.action
+          ? [result.action]
+          : [];
+
       setHistory((h) =>
         h.map((entry, i) =>
           i === streamIdx
-            ? { ...entry, text: fullReply, design: design ?? undefined, cardType: inferCardType(fullReply) }
+            ? {
+                ...entry,
+                text: fullReply || result.message || "",
+                design: design ?? undefined,
+                cardType: inferCardType(fullReply || result.message || ""),
+                actions,
+                warnings: result.warnings,
+                provider: result.provider,
+              }
             : entry,
         ),
       );
 
-      const act = action as AssistantAction | null;
-      if (act?.type === "update_parameters" && act.parameters) {
-        const diff: Record<string, { from: unknown; to: unknown }> = {};
-        for (const [k, v] of Object.entries(act.parameters)) {
-          const prev = currentParameters?.[k];
-          if (prev !== v) diff[k] = { from: prev ?? "—", to: v };
-        }
-        if (Object.keys(diff).length) setPendingDiff(diff);
-        onApplyParameters(act.parameters);
-      } else if (act?.type === "regenerate") {
-        onRegenerate(act.parameters ?? {});
-      } else if (act?.type === "show_layer" && act.layer === "excavation" && !layers.excavation) {
-        toggleLayer("excavation");
-      } else if (act?.type === "download" && act.export) {
-        window.open(apiUrl(`/api/projects/${projectId}/exports/${act.export}`), "_blank");
-      }
+      if (actions.length) setPendingActions(actions);
     } catch (e) {
-      setHistory((h) => h.filter((_, i) => i !== streamIdx).concat({
-        role: "assistant",
-        text: `Error: ${e instanceof Error ? e.message : e}`,
-      }));
+      setHistory((h) =>
+        h
+          .filter((_, i) => i !== streamIdx)
+          .concat({
+            role: "assistant",
+            text: `Error: ${e instanceof Error ? e.message : e}`,
+          }),
+      );
     } finally {
       setBusy(false);
       setTimeout(() => scrollRef.current?.scrollTo({ top: 99999, behavior: "smooth" }), 50);
@@ -193,159 +217,251 @@ export default function ModernAssistantPanel({
   };
 
   return (
-    <div className="flex flex-col h-full border-l border-border bg-background-secondary">
-      <div className="flex items-center gap-3 px-4 py-3 border-b border-border panel-glass">
-        <div className="flex h-8 w-8 items-center justify-center rounded-md bg-primary/10 border border-primary/40">
-          <Bot className="h-4 w-4 text-primary" />
-        </div>
-        <div>
-          <p className="text-sm font-semibold tracking-tight">AI Copilot</p>
-          <p className="text-[10px] text-muted-foreground">Infrastructure planning assistant</p>
-        </div>
-        <Badge variant="accent" className="ml-auto gap-1">
-          <Sparkles className="h-3 w-3" />
-          Live
-        </Badge>
+    <div
+      ref={splitContainerRef}
+      className="flex flex-col h-full rounded-none bg-[#0D1320]"
+    >
+      <div className="shrink-0 overflow-hidden" style={{ height: layersHeight }}>
+        <BlenderLayerPanel design={design} />
       </div>
 
-      <div className="relative flex-1 min-h-0 flex flex-col">
-        {(hasUserMessages || busy) && (
-          <div ref={scrollRef} className="flex-1 overflow-y-auto p-3 space-y-3 min-h-0">
-            <AnimatePresence initial={false}>
-              {history.map((entry, i) => (
-                <motion.div
-                  key={i}
-                  initial={{ opacity: 0, y: 6 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.2 }}
-                  className={cn("flex gap-2", entry.role === "user" ? "flex-row-reverse" : "flex-row")}
-                >
-                  <div
+      <PanelResizeHandle orientation="horizontal" onPointerDown={onResizePointerDown} />
+
+      <div className="flex flex-1 min-h-0 flex flex-col min-w-0 bg-[#05070A]">
+        <div className="shrink-0 border-b border-[rgba(148,163,184,0.12)] px-3 py-2.5">
+          <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center justify-center gap-2 min-w-0">
+            <div className="flex h-8 w-8 items-center justify-center rounded-xl border border-[rgba(34,211,238,0.25)] bg-[rgba(34,211,238,0.1)]">
+              <Sparkles className="h-3.5 w-3.5 text-[#22D3EE] shrink-0" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-[13px] font-semibold text-[#F8FAFC]">GeoAI Copilot</p>
+              <p className="flex items-center gap-1 text-[10px] text-[#94A3B8]">
+                <Circle className="h-2 w-2 fill-[#10B981] text-[#10B981]" />
+                Local Ollama / Cloud LLM
+              </p>
+            </div>
+          </div>
+          {copilotPanelVisible && (
+            <button
+              type="button"
+              onClick={onToggleCopilotPanel}
+              className="shrink-0 p-1 rounded-md text-[#64748B] hover:text-[#F8FAFC] hover:bg-white/[0.06] transition-colors"
+              title="Hide Copilot panel"
+              aria-label="Hide Copilot panel"
+            >
+              <PanelRightClose className="h-4 w-4" />
+            </button>
+          )}
+          </div>
+          <button
+            type="button"
+            onClick={() => setUseMapContext((v) => !v)}
+            className={cn(
+              "mt-2 flex h-7 w-full items-center justify-between rounded-lg border px-2 text-[10px] transition-all",
+              useMapContext
+                ? "border-[rgba(59,130,246,0.28)] bg-[rgba(59,130,246,0.1)] text-[#BFDBFE]"
+                : "border-[rgba(148,163,184,0.14)] bg-white/[0.03] text-[#94A3B8]",
+            )}
+          >
+            Use current map view as context
+            <span className="font-data">{useMapContext ? "On" : "Off"}</span>
+          </button>
+        </div>
+
+        <div ref={scrollRef} className="relative flex-1 min-h-0 overflow-y-auto overscroll-contain scrollbar-thin-dark">
+          {!hasUserMessages ? (
+            <div className="flex min-h-full flex-col items-center justify-center px-5 py-8 text-center">
+              <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-full bg-[rgba(59,130,246,0.12)] border border-[rgba(59,130,246,0.25)]">
+                <Bot className="h-5 w-5 text-[#3B82F6]" />
+              </div>
+              <p className="text-[15px] font-medium text-[#F8FAFC] mb-2">Ask about this design workspace</p>
+              <p className="text-[13px] leading-relaxed text-[#94A3B8] max-w-[260px] mb-5">
+                Ask about site risks, BOQ, design parameters, construction sequence, or cost reduction.
+              </p>
+              <div className="flex flex-wrap justify-center gap-2 max-w-[280px]">
+                {SUGGESTED_PROMPTS.map((prompt) => (
+                  <button
+                    key={prompt}
+                    type="button"
+                    onClick={() => applyPrompt(prompt)}
+                    className="rounded-full border border-[rgba(148,163,184,0.2)] bg-[rgba(15,23,42,0.6)] px-3 py-1.5 text-[11px] text-[#CBD5E1] hover:border-[rgba(59,130,246,0.35)] hover:bg-[rgba(59,130,246,0.08)] transition-colors"
+                  >
+                    {prompt}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <div className="mx-auto w-full max-w-full px-3 py-4 space-y-5">
+              <AnimatePresence initial={false}>
+                {history.map((entry, i) => (
+                  <motion.div
+                    key={i}
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.18 }}
                     className={cn(
-                      "flex h-6 w-6 shrink-0 items-center justify-center rounded-full border mt-0.5",
-                      entry.role === "user"
-                        ? "bg-primary/15 border-primary/30"
-                        : "bg-background-elevated border-border",
+                      "flex w-full",
+                      entry.role === "user" ? "justify-end" : "justify-start",
                     )}
                   >
                     {entry.role === "user" ? (
-                      <User className="h-3 w-3 text-primary" />
+                  <div className="max-w-[88%] rounded-[1.25rem] border border-[rgba(59,130,246,0.22)] bg-[rgba(59,130,246,0.16)] px-4 py-2.5 text-[13px] leading-relaxed text-[#F8FAFC]">
+                        {entry.text}
+                      </div>
                     ) : (
-                      <Bot className="h-3 w-3 text-accent" />
+                      <div className="max-w-full space-y-2 min-w-0">
+                        {entry.provider && entry.provider !== "fallback" && (
+                          <Badge variant="outline" className="text-[10px]">
+                            {entry.provider}
+                          </Badge>
+                        )}
+                        <div className="text-[13px] leading-[1.65] text-foreground/90 whitespace-pre-wrap">
+                          {expanded[i] !== false || entry.text.length < 400
+                            ? entry.text
+                            : `${entry.text.slice(0, 400)}…`}
+                          {entry.text.length > 400 && (
+                            <button
+                              type="button"
+                              onClick={() => setExpanded((e) => ({ ...e, [i]: !e[i] }))}
+                              className="flex items-center gap-1 mt-2 text-[12px] text-muted-foreground hover:text-foreground"
+                            >
+                              {expanded[i] === false ? "Show more" : "Show less"}
+                              <ChevronDown
+                                className={cn("h-3 w-3", expanded[i] !== false && "rotate-180")}
+                              />
+                            </button>
+                          )}
+                        </div>
+                        {entry.warnings && entry.warnings.length > 0 && (
+                          <div className="rounded-lg border border-warning/30 bg-warning/5 px-3 py-2 text-[11px] text-warning-text space-y-1">
+                            {entry.warnings.map((w, wi) => (
+                              <p key={wi}>{w}</p>
+                            ))}
+                          </div>
+                        )}
+                        {entry.actions && entry.actions.length > 0 && i === history.length - 1 && (
+                          <div className="space-y-2">
+                            {entry.actions.map((action, ai) => (
+                              <ActionCard
+                                key={ai}
+                                action={action}
+                                onConfirm={() => void confirmAction(action)}
+                              />
+                            ))}
+                          </div>
+                        )}
+                        {design?.calculated && i === history.length - 1 && (
+                          <DesignSummaryCard
+                            design={design}
+                            projectId={projectId}
+                            onRegenerate={onRegenerate}
+                          />
+                        )}
+                      </div>
                     )}
-                  </div>
-                  <div className={cn("max-w-[90%] space-y-2", entry.role === "user" && "items-end")}>
-                    {entry.cardType && entry.role === "assistant" && (
-                      <ResponseCardHeader type={entry.cardType} />
-                    )}
-                    <div
-                      className={cn(
-                        "rounded-lg px-3 py-2 text-[13px] leading-relaxed",
-                        entry.role === "user" ? "chat-bubble-user ml-auto" : "chat-bubble-ai",
-                      )}
-                    >
-                      {expanded[i] !== false || entry.text.length < 280
-                        ? entry.text
-                        : `${entry.text.slice(0, 280)}…`}
-                      {entry.text.length > 280 && (
-                        <button
-                          type="button"
-                          onClick={() => setExpanded((e) => ({ ...e, [i]: !e[i] }))}
-                          className="flex items-center gap-1 mt-1 text-[11px] text-accent hover:underline"
-                        >
-                          {expanded[i] === false ? "Show more" : "Show less"}
-                          <ChevronDown className={cn("h-3 w-3", expanded[i] !== false && "rotate-180")} />
-                        </button>
-                      )}
-                    </div>
-                    {entry.role === "assistant" &&
-                      design?.calculated &&
-                      hasUserMessages &&
-                      i === history.length - 1 && (
-                        <DesignSummaryCard
-                          design={design}
-                          projectId={projectId}
-                          onRegenerate={onRegenerate}
-                        />
-                      )}
-                  </div>
-                </motion.div>
-              ))}
-            </AnimatePresence>
-            {busy && (
-              <div className="flex items-center gap-2 px-2 py-2 ai-thinking">
-                <span className="h-1.5 w-1.5 rounded-full bg-accent" />
-                <span className="h-1.5 w-1.5 rounded-full bg-accent" />
-                <span className="h-1.5 w-1.5 rounded-full bg-accent" />
-                <span className="text-xs text-muted-foreground ml-1">Analyzing…</span>
-              </div>
-            )}
-          </div>
-        )}
+                  </motion.div>
+                ))}
+              </AnimatePresence>
+              {busy && (
+                <div className="flex items-center gap-1.5 py-1">
+                  <span className="h-2 w-2 rounded-full bg-[#22D3EE] animate-pulse" />
+                  <span className="h-2 w-2 rounded-full bg-[#22D3EE] animate-pulse [animation-delay:150ms]" />
+                  <span className="h-2 w-2 rounded-full bg-[#22D3EE] animate-pulse [animation-delay:300ms]" />
+                  <span className="ml-2 text-[11px] text-[#94A3B8]">GeoAI is analyzing workspace context…</span>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
 
-        {!busy && !hasUserMessages && (
-          <div className="pointer-events-none absolute inset-x-0 bottom-0 px-3 pb-2 pt-8 bg-gradient-to-t from-background-secondary via-background-secondary/70 to-transparent">
-            <div className="flex flex-col gap-1.5 items-stretch pointer-events-auto">
-              {suggestions.map((s) => (
-                <button
-                  key={s}
-                  type="button"
-                  onClick={() => send(s)}
-                  className={cn(
-                    "text-left text-[11px] leading-snug px-3 py-2 rounded-lg border border-border/80",
-                    "bg-background-elevated/80 text-muted-foreground",
-                    "hover:text-foreground hover:border-primary/25 hover:bg-background-elevated",
-                    "transition-colors duration-150",
-                  )}
-                >
-                  {s}
-                </button>
+        <div className="shrink-0 space-y-2 border-t border-[rgba(148,163,184,0.12)] bg-[rgba(5,7,10,0.92)] px-3 pb-3 pt-3">
+          {pendingActions.length > 0 && (
+            <div className="rounded-xl border border-[#22D3EE]/25 bg-[rgba(34,211,238,0.06)] px-3 py-2 text-[11px] space-y-2">
+              <p className="font-medium text-[#22D3EE] flex items-center gap-1">
+                <Zap className="h-3 w-3" />
+                Suggested actions — confirm to apply
+              </p>
+              {pendingActions.map((action, i) => (
+                <div key={i} className="flex items-center justify-between gap-2">
+                  <span className="text-muted-foreground truncate">{actionLabel(action)}</span>
+                  <Button
+                    size="sm"
+                    className="h-7 text-[11px] shrink-0"
+                    onClick={() => void confirmAction(action)}
+                  >
+                    Confirm
+                  </Button>
+                </div>
               ))}
             </div>
-          </div>
-        )}
-      </div>
+          )}
 
-      <div className="shrink-0 border-t border-border panel p-3 space-y-2">
-        {pendingDiff && (
-          <div className="rounded-md border border-primary/30 bg-primary/5 p-2 text-[10px] space-y-1">
-            <p className="font-semibold text-primary">Parameter changes (preview)</p>
-            {Object.entries(pendingDiff).map(([k, { from, to }]) => (
-              <p key={k}>
-                <span className="text-muted-foreground">{k}:</span> {String(from)} → <strong>{String(to)}</strong>
-              </p>
-            ))}
-            <Button size="sm" className="h-6 text-[10px] mt-1" onClick={() => onRegenerate({})}>
-              Regenerate with changes
+          <div className="relative flex items-end gap-2 rounded-[1.35rem] border border-[rgba(148,163,184,0.18)] bg-[rgba(15,23,42,0.82)] px-3 py-2 shadow-sm focus-within:border-[rgba(59,130,246,0.45)] focus-within:ring-1 focus-within:ring-primary/20">
+            <button
+              type="button"
+              className="mb-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[#64748B] hover:bg-white/[0.06] hover:text-[#F8FAFC]"
+              title="Attach workspace context"
+            >
+              <Paperclip className="h-3.5 w-3.5" />
+            </button>
+            <textarea
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  void send();
+                }
+              }}
+              placeholder="Message GeoAI Copilot…"
+              rows={1}
+              disabled={busy}
+              className="flex-1 min-h-[24px] max-h-28 resize-none bg-transparent text-[13px] leading-relaxed text-foreground placeholder:text-muted-foreground focus:outline-none py-1"
+            />
+            <Button
+              type="button"
+              size="icon"
+              disabled={busy || !input.trim()}
+              onClick={() => void send()}
+              className={cn(
+                "h-8 w-8 shrink-0 rounded-full transition-opacity",
+                input.trim() ? "bg-primary text-primary-foreground hover:bg-primary/90" : "bg-muted text-muted-foreground",
+              )}
+              aria-label="Send message"
+            >
+              <ArrowUp className="h-4 w-4" />
             </Button>
           </div>
-        )}
-        <div className="flex gap-2">
-          <Input
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && send()}
-            placeholder="Ask GeoAI Copilot…"
-            className="h-9 text-sm"
-            disabled={busy}
-          />
-          <Button size="icon" className="h-9 w-9 shrink-0" onClick={() => send()} disabled={busy}>
-            <Send className="h-4 w-4" />
-          </Button>
         </div>
       </div>
     </div>
   );
 }
 
-function ResponseCardHeader({ type }: { type: ResponseCardType }) {
-  const meta = CARD_META[type];
-  const Icon = meta.icon;
+function ActionCard({
+  action,
+  onConfirm,
+}: {
+  action: CopilotAction;
+  onConfirm: () => void;
+}) {
   return (
-    <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-      <Icon className="h-3 w-3 text-accent" />
-      {meta.title}
-    </div>
+    <Card className="border-[rgba(34,211,238,0.2)] bg-[rgba(15,23,42,0.5)] p-3 space-y-2 shadow-none">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="text-[12px] font-medium text-[#F8FAFC]">{actionLabel(action)}</p>
+          <p className="text-[11px] text-muted-foreground mt-0.5">{actionDescription(action)}</p>
+        </div>
+        <Badge variant="warning" className="shrink-0 text-[9px]">
+          Confirm
+        </Badge>
+      </div>
+      <Button size="sm" className="h-7 text-[11px] w-full" onClick={onConfirm}>
+        Apply this action
+      </Button>
+    </Card>
   );
 }
 
@@ -362,9 +478,9 @@ function DesignSummaryCard({
   if (!calc) return null;
 
   return (
-    <Card float className="p-3 space-y-2 text-left">
+    <Card className="border-border/60 bg-muted/20 p-3 space-y-2 text-left shadow-none">
       <div className="flex items-center justify-between">
-        <p className="text-[10px] font-semibold uppercase tracking-wider text-accent">AI Summary</p>
+        <p className="text-[10px] font-semibold uppercase tracking-wider text-accent">Calculated summary</p>
         <Badge variant="warning">Preliminary</Badge>
       </div>
       <div className="grid grid-cols-2 gap-2 text-[11px] font-data">
