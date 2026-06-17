@@ -112,9 +112,11 @@ export default function LoginPageInner() {
             )}
           </p>
           <p className="mt-3 text-center text-xs text-muted-foreground">
-            <Link href="/dashboard" className="hover:text-foreground">
-              Continue to dashboard
-            </Link>
+            {!authRequired() && (
+              <Link href="/dashboard" className="hover:text-foreground">
+                Continue to dashboard
+              </Link>
+            )}
           </p>
         </CardContent>
       </Card>

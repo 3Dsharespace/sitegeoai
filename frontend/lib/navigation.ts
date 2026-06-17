@@ -8,6 +8,7 @@ import {
   GitCompareArrows,
   Globe,
   LayoutDashboard,
+  LogIn,
   MapPin,
   Mountain,
   Package,
@@ -52,6 +53,7 @@ export const ENGINEERING_TOOLS = [
 export const SETTINGS_NAV = [
   { href: "/settings", label: "Settings", icon: Settings },
   { href: "/settings/api-keys", label: "Providers", icon: Settings },
+  { href: "/login", label: "Sign In", icon: LogIn },
   { href: "/admin/rates", label: "Rates", icon: Wrench },
   { href: "/admin/templates", label: "Templates", icon: Settings },
 ];

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { Box } from "lucide-react";
 import { motion } from "framer-motion";
+import { appEntryPath } from "@/lib/auth-routes";
 import { cn } from "@/lib/utils";
 import { NAV_LINKS } from "./landing-theme";
 
@@ -51,13 +52,13 @@ export default function Navbar() {
 
         <div className="flex items-center gap-2 sm:gap-3 shrink-0">
           <Link
-            href="/dashboard"
+            href={appEntryPath("/dashboard")}
             className="hidden sm:inline-flex rounded-lg px-3 py-2 text-[13px] font-medium text-[#94A3B8] transition-colors hover:text-[#F8FAFC]"
           >
             Sign In
           </Link>
           <Link
-            href="/projects/new"
+            href={appEntryPath("/dashboard")}
             className={cn(
               "inline-flex items-center justify-center rounded-xl px-4 py-2 text-[13px] font-semibold",
               "bg-gradient-to-r from-[#38BDF8] to-[#6366F1] text-[#05070A]",

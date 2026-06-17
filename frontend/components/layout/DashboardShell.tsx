@@ -3,14 +3,18 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
-import { ChevronRight, Building2, Download, Menu, Plus, Save, Settings, X } from "lucide-react";
+import { ChevronRight, Building2, Download, LogIn, Menu, Plus, Save, Settings, X } from "lucide-react";
 import { useEffect, useState } from "react";
+import { useRequireAuth } from "@/components/auth/RequireAuth";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { CollapsibleSection } from "@/components/ui/collapsible-section";
 import DisclaimerBanner from "@/components/DisclaimerBanner";
 import PageTransition from "@/components/motion/PageTransition";
 import { ProjectHeaderContent } from "@/components/layout/ProjectHeader";
+import { loginPath } from "@/lib/auth-routes";
+import { authRequired } from "@/lib/api";
+import { useAuthUser } from "@/lib/useAuthUser";
 import { useDemoProjectId } from "@/lib/useDemoProjectId";
 import {
   ENGINEERING_TOOLS,
@@ -212,6 +216,9 @@ function SidebarContent({
 export default function DashboardShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const isLanding = pathname === "/";
+  const isLogin = pathname === "/login";
+  const { user, loading: authLoading } = useAuthUser();
+  useRequireAuth();
   const workspaceFullscreen = useProjectStore((s) => s.workspaceFullscreen);
   const project = useProjectStore((s) => s.project);
 
@@ -251,7 +258,7 @@ export default function DashboardShell({ children }: { children: React.ReactNode
     return () => window.removeEventListener("keydown", onKey);
   }, [navOpen]);
 
-  if (isLanding) {
+  if (isLanding || isLogin) {
     return (
       <main className="flex flex-1 flex-col min-h-screen bg-background">
         <PageTransition>{children}</PageTransition>
@@ -329,6 +336,18 @@ export default function DashboardShell({ children }: { children: React.ReactNode
             )}
 
             <div className="ml-auto flex items-center gap-2 shrink-0">
+              {!authLoading && !user && authRequired() && (
+                <Link href={loginPath(pathname ?? "/dashboard")}>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-8 gap-1.5 px-2 text-[11px]"
+                  >
+                    <LogIn className="h-3.5 w-3.5" />
+                    <span className="hidden sm:inline">Sign in</span>
+                  </Button>
+                </Link>
+              )}
               {project && projectId && (
                 <div className="hidden items-center gap-1 md:flex">
                   <Button

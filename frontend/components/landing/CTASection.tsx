@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 import { motion } from "framer-motion";
+import { appEntryPath } from "@/lib/auth-routes";
 
 export default function CTASection() {
   return (
@@ -30,7 +31,7 @@ export default function CTASection() {
             planning insights.
           </p>
           <Link
-            href="/projects/new"
+            href={appEntryPath("/projects/new")}
             className="mt-8 inline-flex items-center gap-2 rounded-xl px-8 py-3.5 text-sm font-semibold bg-gradient-to-r from-[#38BDF8] to-[#6366F1] text-[#05070A] shadow-[0_0_32px_-4px_rgba(56,189,248,0.55)] transition-all hover:brightness-110 hover:scale-[1.02]"
           >
             Launch GeoAI 3D
