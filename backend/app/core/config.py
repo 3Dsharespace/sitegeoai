@@ -40,6 +40,10 @@ class Settings(BaseSettings):
     DEV_MOCK_USER_ROLE: str = "admin"
     ENVIRONMENT: str = "development"
     NEXT_PUBLIC_APP_URL: str = "http://localhost:3000"
+    # Comma-separated extra browser origins (custom domains, staging URLs).
+    CORS_ALLOWED_ORIGINS: str = ""
+    # Allow https://*.netlify.app (production + preview deploys).
+    CORS_ALLOW_NETLIFY: bool = True
 
     GENERATION_JOB_TIMEOUT_SECONDS: int = 300
 

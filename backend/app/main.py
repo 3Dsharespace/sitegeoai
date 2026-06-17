@@ -7,6 +7,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
+from app.core.cors import build_cors_origin_regex, build_cors_origins
 from app.core.disclaimer import DISCLAIMER
 from app.core.exception_handlers import (
     http_exception_handler,
@@ -51,19 +52,19 @@ app.add_exception_handler(Exception, unhandled_exception_handler)
 
 app.add_middleware(RequestLoggingMiddleware)
 
-_cors_origins = {
-    "http://localhost:3000",
-    "http://127.0.0.1:3000",
-}
-if settings.NEXT_PUBLIC_APP_URL:
-    _cors_origins.add(settings.NEXT_PUBLIC_APP_URL.rstrip("/"))
-
+_cors_origin_regex = build_cors_origin_regex()
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=sorted(_cors_origins),
+    allow_origins=build_cors_origins(),
+    allow_origin_regex=_cors_origin_regex,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+)
+logger.info(
+    "CORS origins=%s netlify_regex=%s",
+    build_cors_origins(),
+    bool(_cors_origin_regex),
 )
 
 # Local storage files are served via authenticated route (see app.api.routes.files)
