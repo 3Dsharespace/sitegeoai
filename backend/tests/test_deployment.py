@@ -2,6 +2,7 @@
 
 import importlib.util
 from pathlib import Path
+from unittest.mock import patch
 
 from app.core.production import production_readiness
 
@@ -56,3 +57,15 @@ def test_render_yaml_structure():
     assert "USE_ARQ_WORKER" in text
     assert "alembic upgrade head" in text
     assert "arq app.workers.tasks.WorkerSettings" in text
+
+
+def test_init_db_skips_demo_seed_when_jwt_required(monkeypatch):
+    """Production startup must not insert demo project before any user exists."""
+    from app.core import config
+    from app.db import init_db as init_db_module
+
+    monkeypatch.setattr(config.settings, "AUTH_REQUIRE_JWT", True)
+
+    with patch("app.db.demo_seed.ensure_demo_project") as mock_demo:
+        init_db_module.init_db()
+        mock_demo.assert_not_called()

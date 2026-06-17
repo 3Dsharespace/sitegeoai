@@ -210,7 +210,11 @@ def ensure_demo_project(db: Session) -> Project | None:
 
 
 def ensure_demo_project_for_user(db: Session, user_id: int) -> Project | None:
-    from app.db.models import Project
+    from app.db.models import Project, User
+
+    if db.get(User, user_id) is None:
+        logger.warning("Skipping demo seed: user_id=%s does not exist", user_id)
+        return None
 
     by_name = (
         db.query(Project)

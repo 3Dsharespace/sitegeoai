@@ -9,6 +9,7 @@ import logging
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.db.models import Base, ProjectTemplate, RateItem, User
 from app.db.session import IS_POSTGRES, SessionLocal, engine
 
@@ -100,6 +101,21 @@ def _migrate_sqlite_schema() -> None:
         conn.commit()
 
 
+def _seed_dev_user(db: Session) -> None:
+    """Local dev only — production users register via /api/auth/register."""
+    if db.query(User).count() == 0:
+        db.add(User(id=1, name="Dev User", email="dev@example.com", role="admin", plan="admin"))
+        db.flush()
+        return
+    dev_user = db.get(User, 1)
+    if dev_user is not None:
+        if not dev_user.role or dev_user.role == "user":
+            dev_user.role = "admin"
+        if not dev_user.plan or dev_user.plan == "free":
+            if dev_user.role == "admin":
+                dev_user.plan = "admin"
+
+
 def init_db() -> None:
     if IS_POSTGRES:
         with engine.connect() as conn:
@@ -126,25 +142,20 @@ def init_db() -> None:
 
     db: Session = SessionLocal()
     try:
-        if db.query(User).count() == 0:
-            db.add(User(id=1, name="Dev User", email="dev@example.com", role="admin", plan="admin"))
-        else:
-            dev_user = db.get(User, 1)
-            if dev_user is not None:
-                if not dev_user.role or dev_user.role == "user":
-                    dev_user.role = "admin"
-                if not dev_user.plan or dev_user.plan == "free":
-                    if dev_user.role == "admin":
-                        dev_user.plan = "admin"
+        if not settings.AUTH_REQUIRE_JWT:
+            _seed_dev_user(db)
         if db.query(RateItem).count() == 0:
             for code, name, unit, rate in DEFAULT_RATES:
                 db.add(RateItem(region="default", item_code=code, item_name=name, unit=unit, rate=rate))
         if db.query(ProjectTemplate).count() == 0:
             for ptype, name, params in DEFAULT_TEMPLATES:
                 db.add(ProjectTemplate(project_type=ptype, name=name, default_parameters_json=params))
-        from app.db.demo_seed import ensure_demo_project
+        # Demo project references user_id=1; in production users register first and
+        # GET /api/projects/demo seeds per authenticated user on demand.
+        if not settings.AUTH_REQUIRE_JWT:
+            from app.db.demo_seed import ensure_demo_project
 
-        ensure_demo_project(db)
+            ensure_demo_project(db)
         db.commit()
         logger.info("Database initialized (postgis=%s)", IS_POSTGRES)
     finally:
