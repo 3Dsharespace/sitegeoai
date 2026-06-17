@@ -51,7 +51,7 @@ Local stack: [`docker-compose.yml`](./docker-compose.yml)
 
 | Variable | Required | Notes |
 |----------|----------|-------|
-| `NEXT_PUBLIC_API_URL` | **Yes** | Render API URL, e.g. `https://geoai-api.onrender.com` |
+| `NEXT_PUBLIC_API_URL` | **Yes** | Exact Render web service URL from the dashboard (includes suffix), e.g. `https://geoai-api-91oc.onrender.com` — **not** a shortened `geoai-api.onrender.com` unless you configured that custom domain on Render |
 | `NEXT_PUBLIC_AUTH_REQUIRE_JWT` | **Yes** | `true` in production |
 | `NEXT_PUBLIC_MAP_ENGINE` | Optional | `maplibre` (default) or `cesium` |
 | `NEXT_PUBLIC_MAPBOX_TOKEN` | Optional | Browser-exposed; restrict by referrer |
@@ -278,6 +278,10 @@ S3_SECRET_KEY=your-minio-secret
 | Startup warnings | Logged via `production_readiness()` — check Render logs |
 | `/api/system/status` | `production.deployment_ready`, `critical_count`, warnings |
 
+**PostGIS:** Migrations `001` and `002` both run `CREATE EXTENSION IF NOT EXISTS postgis` on PostgreSQL before any `geometry` columns are used. You do **not** need a separate manual SQL step if the build completes `alembic upgrade head` successfully. After deploy, confirm `postgis_available: true` in `/api/system/status`. If extension creation is blocked by your Postgres provider, run `CREATE EXTENSION IF NOT EXISTS postgis;` once in the database shell, then redeploy.
+
+**Note:** Migration `002` adds `engineering_layers.geom` as PostGIS `geometry(Geometry, 0)`. It is idempotent (skips tables/columns that already exist from `001`).
+
 SQLite is allowed for local dev only. Production with SQLite triggers a **critical** warning.
 
 ---
@@ -299,14 +303,14 @@ On push/PR to `main`:
 |---------|--------------|-----|
 | **401 on all API calls** | JWT required but no token | Set `NEXT_PUBLIC_AUTH_REQUIRE_JWT=true` on Netlify; log in; check `Authorization` header |
 | **401 after deploy** | Wrong `APP_SECRET` or expired token | Log in again; verify same secret on API/worker |
-| **CORS errors** | Frontend URL not allowed | Set `NEXT_PUBLIC_APP_URL` on backend to exact Netlify URL; redeploy API |
+| **CORS errors** | Frontend URL not allowed | Set `NEXT_PUBLIC_APP_URL` on backend to exact Netlify URL; redeploy API. Also verify `NEXT_PUBLIC_API_URL` on Netlify matches your **Render dashboard** service URL (404 on `/health` means wrong host, not CORS) |
 | **Model not showing** | Job failed or GLB missing | Check job status `/api/jobs/{id}`; verify worker running; check S3 config |
 | **GLB 404** | Ephemeral disk or auth | Use S3; ensure logged in; files served via `/files/...` with JWT |
 | **Job stuck queued** | Worker not running or no Redis | Enable `geoai-worker`; verify `REDIS_URL`; `USE_ARQ_WORKER=true` |
 | **Redis unavailable** | Wrong URL or service down | Check Render Key Value; `GET /api/system/status` → `redis_available` |
 | **Map tiles missing** | No Mapbox/Google token | Add keys or use OSM fallback; restrict public keys by domain |
 | **429 usage limit** | Free plan caps | Settings → usage card; wait for daily reset or promote to `pro`/`admin` |
-| **PostGIS / survey disabled** | SQLite or extension missing | Use Render Postgres; run `CREATE EXTENSION postgis;` |
+| **PostGIS / survey disabled** | SQLite or extension missing | Use Render Postgres; migrations enable PostGIS automatically — verify `postgis_available` in system status |
 | **deployment_ready: false** | Critical config warnings | Fix items in `/api/system/status` → `production.warnings` |
 
 ---
