@@ -8,7 +8,8 @@ import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import type { ProjectType } from "@/lib/types";
+import { api } from "@/lib/api";
+import type { ProjectType, ProjectTemplate } from "@/lib/types";
 import { projectTypeFamily, type ProjectTypeFamily } from "@/lib/project-catalog";
 import { selectClassName } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
@@ -158,6 +159,29 @@ export default function ParameterForm({
     resolver: zodResolver(SCHEMAS[family]),
     defaultValues: { ...DEFAULTS[family], ...(initialValues ?? {}) },
   });
+
+  useEffect(() => {
+    if (initialValues) return;
+    let cancelled = false;
+    api
+      .get<ProjectTemplate[]>(`/api/templates?project_type=${encodeURIComponent(projectType)}`)
+      .then((templates) => {
+        if (cancelled) return;
+        const match =
+          templates.find((t) => t.project_type === projectType) ??
+          templates.find((t) => projectTypeFamily(t.project_type as ProjectType) === family);
+        if (!match?.default_parameters_json) return;
+        const merged = { ...DEFAULTS[family], ...match.default_parameters_json, ...(initialValues ?? {}) };
+        form.reset(merged);
+      })
+      .catch(() => {
+        /* keep local defaults */
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectType, family]);
 
   useEffect(() => {
     if (initialValues) {

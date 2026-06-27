@@ -1,10 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Loader2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { api } from "@/lib/api";
 import type { SatelliteTileConfig, TerrainTileConfig } from "@/lib/map-imagery";
+import type { SystemStatus } from "@/lib/types";
 
 interface Providers {
   cesium_ion_available: boolean;
@@ -25,11 +27,26 @@ const PROVIDERS = [
 
 export default function ProviderStatusPage() {
   const [providers, setProviders] = useState<Providers | null>(null);
+  const [systemStatus, setSystemStatus] = useState<SystemStatus | null>(null);
+  const [loading, setLoading] = useState(true);
+
   useEffect(() => {
-    api.get<Providers>("/api/geocode/tile-providers").then(setProviders).catch(() => {});
+    Promise.all([
+      api.get<Providers>("/api/geocode/tile-providers").catch(() => null),
+      api.get<SystemStatus>("/api/system/status").catch(() => null),
+    ]).then(([tileProviders, status]) => {
+      setProviders(tileProviders);
+      setSystemStatus(status);
+      setLoading(false);
+    });
   }, []);
 
   const status = (env: string): boolean | null => {
+    if (systemStatus) {
+      if (env === "OPENAI_API_KEY") return systemStatus.ai.openai_configured;
+      if (env === "ANTHROPIC_API_KEY") return systemStatus.ai.anthropic_configured;
+      if (env === "GEMINI_API_KEY") return systemStatus.ai.gemini_configured;
+    }
     if (!providers) return null;
     if (env === "CESIUM_ION_TOKEN") return providers.cesium_ion_available;
     if (env === "GOOGLE_MAPS_API_KEY") return providers.google_3d_tiles_available;
@@ -50,11 +67,68 @@ export default function ProviderStatusPage() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Provider Status</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            All API keys are configured by your deployment team in the backend{" "}
-            <code className="font-data text-xs">.env</code> file. End users never enter or manage keys
-            in this app.
+            Live status from <code className="font-data text-xs">/api/system/status</code> and tile providers.
+            Keys are configured in backend <code className="font-data text-xs">.env</code> — not entered in this UI.
           </p>
         </div>
+
+        {loading && (
+          <Card>
+            <CardContent className="py-6 flex items-center gap-2 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Loading system status…
+            </CardContent>
+          </Card>
+        )}
+
+        {systemStatus && (
+          <Card float className="divide-y divide-border">
+            <CardContent className="py-3 px-4 flex items-center justify-between gap-4">
+              <div>
+                <div className="text-sm font-medium">Database</div>
+                <div className="text-xs text-muted-foreground">{systemStatus.database_mode_label}</div>
+              </div>
+              <Badge variant={systemStatus.postgis_available ? "success" : "warning"}>
+                {systemStatus.postgis_available ? "PostGIS" : "SQLite"}
+              </Badge>
+            </CardContent>
+            <CardContent className="py-3 px-4 flex items-center justify-between gap-4">
+              <div>
+                <div className="text-sm font-medium">Jobs & storage</div>
+                <div className="text-xs text-muted-foreground">
+                  {systemStatus.job_store} · {systemStatus.storage_mode}
+                </div>
+              </div>
+              <Badge variant={systemStatus.redis_available ? "success" : "secondary"}>
+                Redis {systemStatus.redis_available ? "on" : "off"}
+              </Badge>
+            </CardContent>
+            <CardContent className="py-3 px-4 flex items-center justify-between gap-4">
+              <div>
+                <div className="text-sm font-medium">AI provider</div>
+                <div className="text-xs text-muted-foreground">
+                  Active: {systemStatus.ai.active_provider}
+                  {systemStatus.ai.mock_mode ? " (mock)" : ""}
+                </div>
+              </div>
+              <Badge variant={systemStatus.ai.mock_mode ? "warning" : "success"}>
+                {systemStatus.ai.configured_provider || "default"}
+              </Badge>
+            </CardContent>
+            {systemStatus.production && (
+              <CardContent className="py-3 px-4">
+                <div className="flex flex-wrap gap-2">
+                  <Badge variant={systemStatus.production.deployment_ready ? "success" : "warning"}>
+                    {systemStatus.production.deployment_ready ? "Deployment ready" : "Needs attention"}
+                  </Badge>
+                  {systemStatus.production.critical_count > 0 && (
+                    <Badge variant="destructive">{systemStatus.production.critical_count} critical</Badge>
+                  )}
+                </div>
+              </CardContent>
+            )}
+          </Card>
+        )}
 
         {providers && (
           <Card float className="divide-y divide-border">

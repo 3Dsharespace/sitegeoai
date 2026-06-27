@@ -1,5 +1,6 @@
 "use client";
 
+import { useMemo } from "react";
 import { useParams } from "next/navigation";
 import { CheckCircle2, Circle, Clock, Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -18,12 +19,19 @@ export default function TimelinePage() {
   const projectId = Number(params.id);
   const { project, design, calc, summaryStats, loading, error, load } = useProjectData(projectId);
 
-  if (loading) return <ProjectLoading />;
-  if (error || !project) return <ProjectError error={error || "Not found"} onRetry={load} />;
-
   const sequence = design?.construction_sequence ?? [];
   const timeline = calc?.timeline;
   const months = timeline?.estimated_months_medium as number | undefined;
+  const timelineNote = typeof timeline?.note === "string" ? timeline.note : null;
+
+  const phaseMonths = useMemo(() => {
+    if (!months || sequence.length === 0) return [];
+    const perPhase = months / sequence.length;
+    return sequence.map(() => Math.round(perPhase * 10) / 10);
+  }, [months, sequence]);
+
+  if (loading) return <ProjectLoading />;
+  if (error || !project) return <ProjectError error={error || "Not found"} onRetry={load} />;
 
   const downloadTimeline = () => {
     if (!design) return;
@@ -109,6 +117,9 @@ export default function TimelinePage() {
                     <div className="pb-5 pt-0.5 flex-1">
                       <p className="text-xs font-medium uppercase tracking-wide text-[#64748B]">Phase {i + 1}</p>
                       <p className="text-sm font-medium text-[#F8FAFC] mt-0.5">{step}</p>
+                      {phaseMonths[i] != null && (
+                        <p className="text-[11px] text-[#64748B] mt-0.5 font-data">~{phaseMonths[i]} months</p>
+                      )}
                     </div>
                   </div>
                 ))}
@@ -117,18 +128,23 @@ export default function TimelinePage() {
               <div className="hidden lg:block rounded-lg border border-[rgba(148,163,184,0.12)] bg-[rgba(5,7,10,0.5)] p-4">
                 <p className="text-[10px] font-semibold uppercase tracking-wide text-[#64748B] mb-3">Gantt preview</p>
                 <div className="space-y-2">
-                  {sequence.map((step, i) => (
+                  {sequence.map((step, i) => {
+                    const widthPct = months
+                      ? Math.min(95, ((phaseMonths[i] ?? months / sequence.length) / months) * 100)
+                      : Math.min(95, 35 + (i + 1) * (55 / Math.max(sequence.length, 1)));
+                    return (
                     <div key={i} className="flex items-center gap-2">
                       <span className="text-[9px] text-[#64748B] w-4 shrink-0">{i + 1}</span>
                       <div className="flex-1 h-5 rounded bg-[rgba(148,163,184,0.08)] overflow-hidden">
                         <div
                           className="h-full rounded bg-gradient-to-r from-[#3B82F6] to-[#22D3EE] opacity-80"
-                          style={{ width: `${Math.min(95, 35 + (i + 1) * (55 / Math.max(sequence.length, 1)))}%` }}
+                          style={{ width: `${widthPct}%` }}
                           title={step}
                         />
                       </div>
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             </div>
@@ -149,7 +165,8 @@ export default function TimelinePage() {
           )}
 
           <p className="text-[11px] leading-relaxed text-[#64748B] border-l-2 border-[rgba(245,158,11,0.4)] pl-3">
-            Timeline excludes approval delays, monsoon impact, land acquisition, and utility shifting unless explicitly modeled.
+            {timelineNote ??
+              "Timeline excludes approval delays, monsoon impact, land acquisition, and utility shifting unless explicitly modeled."}
           </p>
         </>
       )}

@@ -115,8 +115,8 @@ export default function MapSelectionPageInner() {
         ai={{
           projectId,
           design,
-          onApplyParameters: () => {},
-          onRegenerate: () => router.push(`/projects/${projectId}/workspace`),
+          onApplyParameters: () => router.push(`/projects/${projectId}/workspace#copilot`),
+          onRegenerate: () => router.push(`/projects/${projectId}/workspace#copilot`),
         }}
         leftPanel={leftPanel}
         map={
@@ -139,8 +139,8 @@ export default function MapSelectionPageInner() {
           <MobileAiDrawer
             projectId={projectId}
             design={design}
-            onApplyParameters={() => {}}
-            onRegenerate={() => router.push(`/projects/${projectId}/workspace`)}
+            onApplyParameters={() => router.push(`/projects/${projectId}/workspace#copilot`)}
+            onRegenerate={() => router.push(`/projects/${projectId}/workspace#copilot`)}
           />
           <MobileBottomNav projectId={projectId} />
           <BottomSummaryBar stats={summaryStats} />

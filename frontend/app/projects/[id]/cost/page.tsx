@@ -1,7 +1,7 @@
 "use client";
 
 import { useParams } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Bar,
   BarChart,
@@ -21,13 +21,14 @@ import ChartCard from "@/components/project-results/ChartCard";
 import MetricCard from "@/components/project-results/MetricCard";
 import ProjectResultShell from "@/components/project-results/ProjectResultShell";
 import ResultPageHeader from "@/components/project-results/ResultPageHeader";
+import ScenarioSelector from "@/components/scenarios/ScenarioSelector";
 import { StatusPill } from "@/components/project-results/StatusPill";
 import EmptyState from "@/components/ui/empty-state";
 import { GlassCard } from "@/components/ui/glass-card";
 import { Button } from "@/components/ui/button";
 import { Tabs } from "@/components/ui/tabs";
 import { useProjectData } from "@/hooks/useProjectData";
-import { apiUrl } from "@/lib/api";
+import { api, apiUrl } from "@/lib/api";
 import { pctDiff } from "@/lib/format-display";
 import { CHART } from "@/lib/chart-theme";
 import { formatCurrency } from "@/lib/utils";
@@ -38,16 +39,39 @@ const CAT_COLORS = CHART.colors;
 export default function CostDashboardPage() {
   const params = useParams<{ id: string }>();
   const projectId = Number(params.id);
-  const { project, estimate, calc, summaryStats, loading, error, load } = useProjectData(projectId);
+  const { project, scenarios, scenarioSummaries, scenario, selectScenario, estimate, calc, summaryStats, loading, error, load } =
+    useProjectData(projectId);
   const [phase, setPhase] = useState<(typeof PHASES)[number]>("all");
+  const [scenarioEstimate, setScenarioEstimate] = useState(estimate);
+
+  const scenarioId = scenario?.id;
+
+  useEffect(() => {
+    let cancelled = false;
+    const qs = scenarioId ? `?scenario_id=${scenarioId}` : "";
+    api
+      .getOptional<typeof estimate>(`/api/projects/${projectId}/estimates${qs}`)
+      .then((e) => {
+        if (!cancelled) setScenarioEstimate(e);
+      })
+      .catch(() => {
+        if (!cancelled) setScenarioEstimate(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId, scenarioId, estimate]);
+
+  const activeEstimate = scenarioEstimate ?? estimate;
+  const activeCalc = scenario?.design_output_json?.calculated ?? calc;
 
   const filteredItems = useMemo(() => {
-    if (!estimate) return [];
-    if (phase === "all") return estimate.line_items;
-    return estimate.line_items.filter(
+    if (!activeEstimate) return [];
+    if (phase === "all") return activeEstimate.line_items;
+    return activeEstimate.line_items.filter(
       (i) => i.category.toLowerCase().includes(phase) || i.item_name.toLowerCase().includes(phase),
     );
-  }, [estimate, phase]);
+  }, [activeEstimate, phase]);
 
   const categoryData = useMemo(() => {
     const map = new Map<string, number>();
@@ -58,14 +82,14 @@ export default function CostDashboardPage() {
   }, [filteredItems]);
 
   const costBreakdown = useMemo(() => {
-    if (!calc?.cost_summary) return [];
-    const c = calc.cost_summary;
+    if (!activeCalc?.cost_summary) return [];
+    const c = activeCalc.cost_summary;
     return [
       { name: "Direct", value: c.direct_cost },
       { name: "Contingency", value: c.contingency },
       { name: "Design/Survey", value: c.design_survey_approval },
     ].filter((x) => x.value > 0);
-  }, [calc]);
+  }, [activeCalc]);
 
   const largestDriver = useMemo(() => {
     if (categoryData.length === 0) return null;
@@ -81,16 +105,16 @@ export default function CostDashboardPage() {
   if (loading) return <ProjectLoading />;
   if (error || !project) return <ProjectError error={error || "Not found"} onRetry={load} />;
 
-  const cost = calc?.cost_summary;
+  const cost = activeCalc?.cost_summary;
 
   return (
     <ProjectResultShell projectId={projectId} stats={summaryStats}>
       <ResultPageHeader
         title="Cost Analysis"
         subtitle="Compare low, medium, and high preliminary cost estimates by category."
-        status={estimate ? "Preliminary" : "Pending design"}
+        status={activeEstimate ? "Preliminary" : "Pending design"}
         actions={
-          estimate ? (
+          activeEstimate ? (
             <a href={apiUrl(`/api/projects/${projectId}/exports/csv`)}>
               <Button size="sm" variant="secondary" className="gap-1.5">
                 <Download className="h-3.5 w-3.5" />
@@ -101,7 +125,19 @@ export default function CostDashboardPage() {
         }
       />
 
-      {!estimate && (
+      <div className="max-w-xs">
+        <ScenarioSelector
+          projectId={projectId}
+          scenarios={scenarios}
+          selectedId={scenario?.id ?? null}
+          onSelect={(s) => {
+            const summary = scenarioSummaries.find((x) => x.scenario_id === s.id);
+            if (summary) void selectScenario(summary);
+          }}
+        />
+      </div>
+
+      {!activeEstimate && (
         <GlassCard className="p-8">
           <EmptyState
             title="No cost data yet"
@@ -110,7 +146,7 @@ export default function CostDashboardPage() {
         </GlassCard>
       )}
 
-      {estimate && (
+      {activeEstimate && (
         <>
           <div className="overflow-x-auto scrollbar-none -mx-1 px-1">
             <Tabs

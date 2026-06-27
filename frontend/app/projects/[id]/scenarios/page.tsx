@@ -32,6 +32,8 @@ import { cn } from "@/lib/utils";
 
 type Filter = "all" | "latest" | "completed";
 
+const pinStorageKey = (projectId: number) => `project-${projectId}-pinned-scenario`;
+
 export default function ScenarioComparePage() {
   const params = useParams<{ id: string }>();
   const projectId = Number(params.id);
@@ -41,6 +43,14 @@ export default function ScenarioComparePage() {
   const [selectedCompare, setSelectedCompare] = useState<number[]>([]);
   const [compareResult, setCompareResult] = useState<ScenarioCompareResult | null>(null);
   const [comparing, setComparing] = useState(false);
+  const [pinVersion, setPinVersion] = useState(0);
+
+  const pinnedId = useMemo(() => {
+    if (typeof window === "undefined") return null;
+    const raw = localStorage.getItem(pinStorageKey(projectId));
+    return raw ? Number(raw) : null;
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- pinVersion bumps after pin toggle
+  }, [projectId, pinVersion]);
 
   const filtered = useMemo(() => {
     let list = [...scenarioSummaries];
@@ -55,17 +65,18 @@ export default function ScenarioComparePage() {
     [scenarioSummaries],
   );
 
-  const chartData = useMemo(
-    () =>
-      completed.map((s) => ({
-        name: s.name.length > 14 ? `${s.name.slice(0, 12)}…` : s.name,
-        cost: s.cost_total ?? 0,
-        cement: s.materials_summary?.concrete_m3 ?? 0,
-        steel: (s.materials_summary?.steel_kg ?? 0) / 1000,
-        duration: 0,
-      })),
-    [completed],
-  );
+  const chartData = useMemo(() => {
+    const durationById = new Map(
+      (compareResult?.rows ?? []).map((r) => [r.scenario_id, r.duration_months ?? 0]),
+    );
+    return completed.map((s) => ({
+      name: s.name.length > 14 ? `${s.name.slice(0, 12)}…` : s.name,
+      cost: s.cost_total ?? 0,
+      cement: s.materials_summary?.concrete_m3 ?? 0,
+      steel: (s.materials_summary?.steel_kg ?? 0) / 1000,
+      duration: durationById.get(s.scenario_id) ?? s.duration_months ?? 0,
+    }));
+  }, [completed, compareResult]);
 
   const bestCost = useMemo(() => {
     if (chartData.length === 0) return null;
@@ -79,6 +90,13 @@ export default function ScenarioComparePage() {
       if (prev.length >= 4) return prev;
       return [...prev, id];
     });
+  };
+
+  const togglePin = (id: number) => {
+    const key = pinStorageKey(projectId);
+    if (pinnedId === id) localStorage.removeItem(key);
+    else localStorage.setItem(key, String(id));
+    setPinVersion((v) => v + 1);
   };
 
   const runCompare = useCallback(async () => {
@@ -162,11 +180,12 @@ export default function ScenarioComparePage() {
         </GlassCard>
       ) : (
         <>
-          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
             {[
               { title: "Cost (medium)", key: "cost" as const, format: (v: number) => formatCurrency(v) },
               { title: "Concrete (m³)", key: "cement" as const, format: (v: number) => v.toLocaleString("en-IN") },
               { title: "Steel (tonnes)", key: "steel" as const, format: (v: number) => v.toFixed(1) },
+              { title: "Duration (mo)", key: "duration" as const, format: (v: number) => v.toFixed(1) },
             ].map(({ title, key, format }) => (
               <ChartCard key={key} title={title} height="h-44 sm:h-48">
                 <ResponsiveContainer width="100%" height="100%">
@@ -286,8 +305,16 @@ export default function ScenarioComparePage() {
           {filtered.map((s) => {
             const isBest = s.cost_total != null && bestCost != null && s.cost_total === bestCost;
             const checked = selectedCompare.includes(s.scenario_id);
+            const isPinned = pinnedId === s.scenario_id;
             return (
-              <GlassCard key={s.scenario_id} className={cn("p-4", isBest && "border-[rgba(16,185,129,0.35)]")}>
+              <GlassCard
+                key={s.scenario_id}
+                className={cn(
+                  "p-4",
+                  isBest && "border-[rgba(16,185,129,0.35)]",
+                  isPinned && "border-[rgba(59,130,246,0.35)]",
+                )}
+              >
                 <div className="flex items-start justify-between gap-2 mb-2">
                   <div className="flex items-start gap-2 min-w-0">
                     <input
@@ -339,7 +366,13 @@ export default function ScenarioComparePage() {
                   >
                     View in studio
                   </Button>
-                  <Button size="sm" variant="ghost" className="h-8 px-2" title="Pin scenario">
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className={cn("h-8 px-2", isPinned && "text-[#38BDF8]")}
+                    title={isPinned ? "Unpin scenario" : "Pin scenario"}
+                    onClick={() => togglePin(s.scenario_id)}
+                  >
                     <Pin className="h-3.5 w-3.5" />
                   </Button>
                 </div>

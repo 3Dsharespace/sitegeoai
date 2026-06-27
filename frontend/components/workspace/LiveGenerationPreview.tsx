@@ -2,7 +2,8 @@
 
 import { MapboxOverlay } from "@deck.gl/mapbox";
 import type maplibregl from "maplibre-gl";
-import { Eye, EyeOff } from "lucide-react";
+import { Eye, EyeOff, XCircle } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { buildPreviewLayout } from "@/lib/map/generation-preview-geometry";
 import { buildGenerationPreviewLayers } from "@/lib/map/generation-preview-layers";
@@ -27,9 +28,16 @@ function mapJobStageToPreview(stage?: JobStage | null): JobStage | "idle" {
 interface LiveGenerationPreviewProps {
   map: maplibregl.Map | null;
   project: Project;
+  onCancel?: () => void;
+  cancelling?: boolean;
 }
 
-export default function LiveGenerationPreview({ map, project }: LiveGenerationPreviewProps) {
+export default function LiveGenerationPreview({
+  map,
+  project,
+  onCancel,
+  cancelling,
+}: LiveGenerationPreviewProps) {
   const activeJob = useProjectStore((s) => s.activeJob);
   const overlayRef = useRef<MapboxOverlay | null>(null);
   const [enabled, setEnabled] = useState(readPreviewEnabled);
@@ -174,6 +182,19 @@ export default function LiveGenerationPreview({ map, project }: LiveGenerationPr
           {enabled ? <Eye className="h-3 w-3" /> : <EyeOff className="h-3 w-3" />}
           Live 3D preview
         </button>
+        {onCancel && activeJob.status !== "cancelled" && (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            disabled={cancelling}
+            onClick={onCancel}
+            className="h-6 gap-1 rounded-full px-2 text-[10px] text-[#F87171] hover:bg-[rgba(239,68,68,0.12)] hover:text-[#FCA5A5]"
+          >
+            <XCircle className="h-3 w-3" />
+            Cancel
+          </Button>
+        )}
       </div>
     </div>
   );

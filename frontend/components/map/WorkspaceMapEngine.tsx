@@ -26,6 +26,8 @@ interface WorkspaceMapEngineProps {
   onGenerate?: () => void;
   onAnalyze?: () => void;
   onGenerationCompleted?: () => void;
+  onCancelJob?: () => void;
+  cancellingJob?: boolean;
 }
 
 export default function WorkspaceMapEngine(props: WorkspaceMapEngineProps) {
@@ -46,7 +48,12 @@ export default function WorkspaceMapEngine(props: WorkspaceMapEngineProps) {
           defaultView="3d"
         />
         {configuredEngine !== "cesium" && (
-          <LiveGenerationPreview map={null} project={props.project} />
+          <LiveGenerationPreview
+            map={null}
+            project={props.project}
+            onCancel={props.onCancelJob}
+            cancelling={props.cancellingJob}
+          />
         )}
       </div>
     );
@@ -60,7 +67,12 @@ export default function WorkspaceMapEngine(props: WorkspaceMapEngineProps) {
         showSuggestionsPanel
         defaultView="2d"
       />
-      <LiveGenerationPreview map={null} project={props.project} />
+      <LiveGenerationPreview
+        map={null}
+        project={props.project}
+        onCancel={props.onCancelJob}
+        cancelling={props.cancellingJob}
+      />
     </div>
   );
 }

@@ -13,7 +13,8 @@ import { Button } from "@/components/ui/button";
 import MapToolbarToggle from "@/components/ui/map-toolbar-toggle";
 import { Input } from "@/components/ui/input";
 import { Tabs } from "@/components/ui/tabs";
-import { api } from "@/lib/api";
+import { api, formatApiErrorMessage } from "@/lib/api";
+import { toast } from "@/lib/toast";
 import type { GeoJSONFeature, GeoJSONGeometry, GeocodeResult, Project, SiteAnalysis } from "@/lib/types";
 import type { SiteSuggestion } from "@/lib/site-suggestions";
 import { generateSiteSuggestions } from "@/lib/site-suggestions";
@@ -146,6 +147,44 @@ export default function MapViewerArea({
     if (buildingFeatures.length) feats.push(...buildingFeatures);
     return feats;
   }, [roadFeatures, buildingFeatures]);
+
+  useEffect(() => {
+    const onSaveProject = async () => {
+      const { pendingSave } = useProjectStore.getState();
+      try {
+        if (pendingSave) {
+          const body =
+            pendingSave.kind === "boundary"
+              ? { boundary_geojson: pendingSave.geometry }
+              : { alignment_geojson: pendingSave.geometry };
+          await api.put(`/api/projects/${project.id}`, body);
+          useProjectStore.getState().setPendingSave(null);
+          if (pendingSave.kind === "boundary") await onBoundaryDrawn?.(pendingSave.geometry);
+          else await onAlignmentDrawn?.(pendingSave.geometry);
+          toast("Project geometry saved", { variant: "success" });
+          return;
+        }
+        const body: Record<string, unknown> = {};
+        if (project.boundary_geojson) body.boundary_geojson = project.boundary_geojson;
+        if (project.alignment_geojson) body.alignment_geojson = project.alignment_geojson;
+        if (project.center_lat != null && project.center_lng != null) {
+          body.center_lat = project.center_lat;
+          body.center_lng = project.center_lng;
+          if (project.location_name) body.location_name = project.location_name;
+        }
+        if (!Object.keys(body).length) {
+          toast("Nothing to save", { variant: "default", description: "Draw a boundary or alignment first." });
+          return;
+        }
+        await api.put(`/api/projects/${project.id}`, body);
+        toast("Project saved", { variant: "success" });
+      } catch (e) {
+        toast("Save failed", { variant: "error", description: formatApiErrorMessage(e) });
+      }
+    };
+    window.addEventListener("geoai:save-project", onSaveProject);
+    return () => window.removeEventListener("geoai:save-project", onSaveProject);
+  }, [project, onBoundaryDrawn, onAlignmentDrawn]);
 
   useEffect(() => {
     if (!project.boundary_geojson && project.center_lng != null && project.center_lat != null) {

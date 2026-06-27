@@ -4,11 +4,9 @@ import {
   Building2,
   Clock,
   FileText,
-  FolderKanban,
   GitCompareArrows,
   Globe,
   LayoutDashboard,
-  LogIn,
   MapPin,
   Mountain,
   Package,
@@ -22,14 +20,13 @@ import {
 } from "lucide-react";
 
 export const MAIN_NAV = [
-  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/dashboard", label: "Projects", icon: FolderKanban, matchPrefix: "/dashboard" },
-  { href: "/projects/new", label: "Site Selection", icon: MapPin },
+  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard, matchPrefix: "/dashboard" },
+  { href: "/projects/new", label: "New Project", icon: MapPin },
 ];
 
 export const PROJECT_NAV = (id: number) => [
   { href: `/projects/${id}/workspace`, label: "AI Design Studio", icon: Sparkles },
-  { href: `/projects/${id}/map`, label: "Site Selection", icon: Globe },
+  { href: `/projects/${id}/map`, label: "GIS Workspace", icon: Globe },
   { href: `/projects/${id}/model`, label: "3D Models", icon: Box },
   { href: `/projects/${id}/estimate`, label: "Material Estimation", icon: Package },
   { href: `/projects/${id}/cost`, label: "Cost Analysis", icon: BarChart3 },
@@ -53,9 +50,10 @@ export const ENGINEERING_TOOLS = [
 export const SETTINGS_NAV = [
   { href: "/settings", label: "Settings", icon: Settings },
   { href: "/settings/api-keys", label: "Providers", icon: Settings },
-  { href: "/login", label: "Sign In", icon: LogIn },
   { href: "/admin/rates", label: "Rates", icon: Wrench },
   { href: "/admin/templates", label: "Templates", icon: Settings },
+  { href: "/admin/audit", label: "Audit Log", icon: FileText },
+  { href: "/admin/usage", label: "Usage Admin", icon: BarChart3 },
 ];
 
 export const DEMO_PROJECT_ID = 5;

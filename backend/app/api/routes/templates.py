@@ -8,6 +8,7 @@ from app.db.session import get_db
 from app.services.audit import log_audit_event
 
 router = APIRouter(prefix="/api/admin/templates", tags=["admin"])
+public_router = APIRouter(prefix="/api/templates", tags=["templates"])
 
 
 class TemplateIn(BaseModel):
@@ -37,6 +38,15 @@ def list_templates(
     if project_type:
         query = query.filter(ProjectTemplate.project_type == project_type)
     return [_out(t) for t in query.order_by(ProjectTemplate.project_type)]
+
+
+@public_router.get("")
+def list_templates_public(
+    project_type: str | None = None,
+    db: Session = Depends(get_db),
+    _user_id: int = Depends(get_current_user_id),
+):
+    return list_templates(project_type=project_type, db=db, _user_id=_user_id)
 
 
 @router.post("", status_code=201)

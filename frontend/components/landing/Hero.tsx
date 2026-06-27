@@ -4,6 +4,8 @@ import Link from "next/link";
 import { ArrowRight, Play } from "lucide-react";
 import { motion } from "framer-motion";
 import { appEntryPath } from "@/lib/auth-routes";
+import { buttonVariants } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import HeroMockup from "./HeroMockup";
 import { useDemoProjectId } from "@/lib/useDemoProjectId";
 
@@ -57,18 +59,15 @@ export default function Hero() {
               transition={{ duration: 0.55, delay: 0.15 }}
               className="mt-8 flex flex-wrap gap-3"
             >
-              <Link
-                href={appEntryPath("/projects/new")}
-                className="inline-flex items-center gap-2 rounded-xl px-6 py-3 text-sm font-semibold bg-gradient-to-r from-[#38BDF8] to-[#6366F1] text-[#05070A] shadow-[0_0_28px_-4px_rgba(56,189,248,0.55)] transition-all hover:brightness-110 hover:shadow-[0_0_36px_-4px_rgba(56,189,248,0.7)]"
-              >
+              <Link href={appEntryPath("/projects/new")} className={cn(buttonVariants({ variant: "marketing", size: "lg" }), "gap-2")}>
                 Start Mapping
                 <ArrowRight className="h-4 w-4" />
               </Link>
               <Link
                 href={appEntryPath(`/projects/${demoId}/workspace`)}
-                className="inline-flex items-center gap-2 rounded-xl border border-white/[0.12] bg-white/[0.04] px-6 py-3 text-sm font-semibold text-[#F8FAFC] backdrop-blur-sm transition-all hover:border-[rgba(56,189,248,0.3)] hover:bg-white/[0.07]"
+                className={cn(buttonVariants({ variant: "outline", size: "lg" }), "gap-2 border-white/12 bg-white/[0.04]")}
               >
-                <Play className="h-4 w-4 text-[#38BDF8]" />
+                <Play className="h-4 w-4 text-[var(--marketing-primary)]" />
                 View Demo
               </Link>
             </motion.div>

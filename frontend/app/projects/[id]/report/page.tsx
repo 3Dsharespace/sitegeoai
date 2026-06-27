@@ -2,13 +2,15 @@
 
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Box,
   Calendar,
   FileJson,
   FileSpreadsheet,
   FileText,
+  Layers,
+  Mountain,
   Ruler,
 } from "lucide-react";
 import { ProjectError, ProjectLoading } from "@/components/layout/ProjectHeader";
@@ -22,6 +24,7 @@ import { Input } from "@/components/ui/input";
 import ProjectValidationPanel from "@/components/project/ProjectValidationPanel";
 import { useProjectData } from "@/hooks/useProjectData";
 import { api, apiUrl } from "@/lib/api";
+import type { SurveyStatus } from "@/lib/types";
 import { formatCurrency } from "@/lib/utils";
 
 const EXPORTS = [
@@ -41,7 +44,15 @@ export default function ReportPage() {
   const [editing, setEditing] = useState(false);
   const [draftAssumptions, setDraftAssumptions] = useState<string[]>([]);
   const [showPdfPreview, setShowPdfPreview] = useState(false);
+  const [surveyStatus, setSurveyStatus] = useState<SurveyStatus | null>(null);
   const assumptions = editing ? draftAssumptions : serverAssumptions;
+
+  useEffect(() => {
+    api
+      .getOptional<SurveyStatus>(`/api/projects/${projectId}/survey/status`)
+      .then(setSurveyStatus)
+      .catch(() => setSurveyStatus(null));
+  }, [projectId]);
 
   const saveAssumptions = async () => {
     if (!scenario) return;
@@ -78,12 +89,50 @@ export default function ReportPage() {
             preview={preview}
             fileType={fileType}
             icon={icon}
-            href={apiUrl(`/api/projects/${projectId}/exports/${id}`)}
-            available={!!design || id === "json" || id === "geojson"}
-            unavailableReason={!design ? "Generate a design in AI Design Studio first." : undefined}
+            href={id === "dxf" ? undefined : apiUrl(`/api/projects/${projectId}/exports/${id}`)}
+            available={id === "dxf" ? false : !!design || id === "json" || id === "geojson"}
+            unavailableReason={
+              id === "dxf"
+                ? "DXF export is planned — use GeoJSON or GLB for now."
+                : !design
+                  ? "Generate a design in AI Design Studio first."
+                  : undefined
+            }
             onPreview={id === "pdf" ? () => setShowPdfPreview(true) : undefined}
           />
         ))}
+
+        {surveyStatus?.survey_mode_enabled && (
+          <>
+            <ExportCard
+              title="Survey terrain GLB"
+              description="Engineering terrain mesh from survey DEM"
+              fileType="GLB"
+              icon={Mountain}
+              href={apiUrl(`/api/projects/${projectId}/exports/terrain.glb`)}
+              available={surveyStatus.postgis_available}
+              unavailableReason="Requires PostGIS and survey-grade DEM."
+            />
+            <ExportCard
+              title="Survey roads GLB"
+              description="Engineering centerline mesh export"
+              fileType="GLB"
+              icon={Layers}
+              href={apiUrl(`/api/projects/${projectId}/exports/roads.glb`)}
+              available={surveyStatus.postgis_available}
+              unavailableReason="Requires PostGIS and imported vectors."
+            />
+            <ExportCard
+              title="Accuracy report"
+              description="Latest survey validation JSON"
+              fileType="JSON"
+              icon={FileJson}
+              href={apiUrl(`/api/projects/${projectId}/exports/accuracy-report.json`)}
+              available={surveyStatus.postgis_available}
+              unavailableReason="Run survey validation first."
+            />
+          </>
+        )}
 
         <ExportCard
           title="Download 3D Model"

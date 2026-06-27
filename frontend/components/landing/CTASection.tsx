@@ -4,6 +4,9 @@ import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 import { motion } from "framer-motion";
 import { appEntryPath } from "@/lib/auth-routes";
+import { buttonVariants } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
+import { BRAND_NAME } from "./landing-theme";
 
 export default function CTASection() {
   return (
@@ -30,11 +33,8 @@ export default function CTASection() {
             Turn real-world location data into 3D layouts, material estimates, and engineering-ready
             planning insights.
           </p>
-          <Link
-            href={appEntryPath("/projects/new")}
-            className="mt-8 inline-flex items-center gap-2 rounded-xl px-8 py-3.5 text-sm font-semibold bg-gradient-to-r from-[#38BDF8] to-[#6366F1] text-[#05070A] shadow-[0_0_32px_-4px_rgba(56,189,248,0.55)] transition-all hover:brightness-110 hover:scale-[1.02]"
-          >
-            Launch GeoAI 3D
+          <Link href={appEntryPath("/projects/new")} className={cn(buttonVariants({ variant: "marketing", size: "lg" }), "mt-8 gap-2")}>
+            Launch {BRAND_NAME.split(" ")[0]}
             <ArrowRight className="h-4 w-4" />
           </Link>
           <p className="mt-6 text-xs text-[#64748B]">

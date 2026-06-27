@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api";
+import { formatApiErrorMessage } from "@/lib/api";
 import { toast } from "@/lib/toast";
 import type { JobStatus } from "@/lib/types";
 import { useProjectStore } from "@/stores/projectStore";
@@ -19,12 +20,34 @@ export function useActiveJobPolling(options?: {
   onPreviewReady?: () => void;
 }) {
   const { activeJob, setActiveJob } = useProjectStore();
+  const [cancelling, setCancelling] = useState(false);
   const previewNotifiedRef = useRef<string | null>(null);
   const completeNotifiedRef = useRef<string | null>(null);
   const failedNotifiedRef = useRef<string | null>(null);
   const cancelledNotifiedRef = useRef<string | null>(null);
   const onCompleted = options?.onCompleted;
   const onPreviewReady = options?.onPreviewReady;
+
+  const cancelJob = useCallback(async () => {
+    if (!activeJob?.job_id) return;
+    if (activeJob.status === "completed" || activeJob.status === "failed" || activeJob.status === "cancelled") {
+      return;
+    }
+    setCancelling(true);
+    try {
+      await api.post(`/api/jobs/${activeJob.job_id}/cancel`);
+      const status = await api.get<JobStatus>(`/api/jobs/${activeJob.job_id}`);
+      setActiveJob(status);
+      toast("Generation cancelled", { variant: "default" });
+    } catch (e) {
+      toast("Could not cancel job", {
+        variant: "error",
+        description: formatApiErrorMessage(e),
+      });
+    } finally {
+      setCancelling(false);
+    }
+  }, [activeJob, setActiveJob]);
 
   useEffect(() => {
     if (
@@ -81,4 +104,6 @@ export function useActiveJobPolling(options?: {
     }, 1000);
     return () => window.clearInterval(interval);
   }, [activeJob, onCompleted, onPreviewReady, setActiveJob]);
+
+  return { cancelJob, cancelling };
 }

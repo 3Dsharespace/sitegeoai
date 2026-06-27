@@ -3,18 +3,18 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
-import { ChevronRight, Building2, Download, LogIn, Menu, Plus, Save, Settings, X } from "lucide-react";
+import { ChevronRight, Building2, Download, Menu, Plus, Save, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useRequireAuth } from "@/components/auth/RequireAuth";
+import { BRAND_NAME } from "@/components/landing/landing-theme";
+import ProjectStepper from "@/components/layout/ProjectStepper";
+import UserMenu from "@/components/layout/UserMenu";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { CollapsibleSection } from "@/components/ui/collapsible-section";
 import DisclaimerBanner from "@/components/DisclaimerBanner";
 import PageTransition from "@/components/motion/PageTransition";
 import { ProjectHeaderContent } from "@/components/layout/ProjectHeader";
-import { loginPath } from "@/lib/auth-routes";
-import { authRequired } from "@/lib/api";
-import { useAuthUser } from "@/lib/useAuthUser";
 import { useDemoProjectId } from "@/lib/useDemoProjectId";
 import {
   ENGINEERING_TOOLS,
@@ -104,11 +104,13 @@ function SidebarContent({
   projectId,
   inProject,
   onNavigate,
+  isAdmin,
 }: {
   pathname: string | null;
   projectId: number | null;
   inProject: boolean;
   onNavigate: () => void;
+  isAdmin: boolean;
 }) {
   const demoId = useDemoProjectId();
 
@@ -120,7 +122,7 @@ function SidebarContent({
         </div>
         <div className="min-w-0 flex-1">
           <Link href="/" className="font-semibold text-sm text-foreground tracking-tight block leading-tight" onClick={onNavigate}>
-            GeoAI Studio
+            {BRAND_NAME}
           </Link>
           <p className="text-[10px] text-muted-foreground truncate">Infrastructure planning</p>
         </div>
@@ -186,7 +188,10 @@ function SidebarContent({
         )}
 
         <CollapsibleSection title="System" defaultOpen={false}>
-          {SETTINGS_NAV.map((item) => (
+          {SETTINGS_NAV.filter((item) => {
+            if (item.href.startsWith("/admin") && !isAdmin) return false;
+            return true;
+          }).map((item) => (
             <NavLink
               key={item.href}
               {...item}
@@ -217,7 +222,7 @@ export default function DashboardShell({ children }: { children: React.ReactNode
   const pathname = usePathname();
   const isLanding = pathname === "/";
   const isLogin = pathname === "/login";
-  const { user, loading: authLoading } = useAuthUser();
+  const { isAdmin } = useAuthUser();
   useRequireAuth();
   const workspaceFullscreen = useProjectStore((s) => s.workspaceFullscreen);
   const project = useProjectStore((s) => s.project);
@@ -300,6 +305,7 @@ export default function DashboardShell({ children }: { children: React.ReactNode
           projectId={projectId}
           inProject={inProject}
           onNavigate={closeNav}
+          isAdmin={isAdmin}
         />
       </motion.aside>
 
@@ -336,18 +342,6 @@ export default function DashboardShell({ children }: { children: React.ReactNode
             )}
 
             <div className="ml-auto flex items-center gap-2 shrink-0">
-              {!authLoading && !user && authRequired() && (
-                <Link href={loginPath(pathname ?? "/dashboard")}>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-8 gap-1.5 px-2 text-[11px]"
-                  >
-                    <LogIn className="h-3.5 w-3.5" />
-                    <span className="hidden sm:inline">Sign in</span>
-                  </Button>
-                </Link>
-              )}
               {project && projectId && (
                 <div className="hidden items-center gap-1 md:flex">
                   <Button
@@ -355,7 +349,8 @@ export default function DashboardShell({ children }: { children: React.ReactNode
                     variant="ghost"
                     size="sm"
                     className="h-8 gap-1.5 px-2 text-[11px] text-[#CBD5E1] hover:bg-white/[0.06] hover:text-[#F8FAFC]"
-                    title="Geometry saves happen from the active drawing tools"
+                    title="Save project geometry"
+                    onClick={() => window.dispatchEvent(new CustomEvent("geoai:save-project"))}
                   >
                     <Save className="h-3.5 w-3.5" />
                     <span className="hidden xl:inline">Save</span>
@@ -370,29 +365,28 @@ export default function DashboardShell({ children }: { children: React.ReactNode
                       <span className="hidden xl:inline">Export</span>
                     </Button>
                   </Link>
-                  <Link href="/settings">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-8 gap-1.5 px-2 text-[11px] text-[#CBD5E1] hover:bg-white/[0.06] hover:text-[#F8FAFC]"
-                    >
-                      <Settings className="h-3.5 w-3.5" />
-                      <span className="hidden xl:inline">Settings</span>
-                    </Button>
-                  </Link>
                 </div>
               )}
               <Link href="/projects/new">
-                <Button
-                  size="sm"
-                  className="gap-1.5 h-8 text-xs bg-gradient-to-r from-[#2563EB] via-[#3B82F6] to-[#22D3EE] border-0 shadow-[0_0_24px_-5px_rgba(59,130,246,0.7)] hover:brightness-110 hover:shadow-[0_0_30px_-4px_rgba(34,211,238,0.7)] transition-all"
-                >
+                <Button size="sm" variant="default" className="gap-1.5 h-8 text-xs">
                   <Plus className="h-3.5 w-3.5" />
                   <span className="hidden sm:inline">New Project</span>
                 </Button>
               </Link>
+              <UserMenu pathname={pathname} />
             </div>
           </header>
+        )}
+
+        {inProject && project && !workspaceFullscreen && (
+          <ProjectStepper
+            projectId={projectId!}
+            hasLocation={project.center_lat != null}
+            hasBoundary={!!project.boundary_geojson}
+            hasParameters={project.status !== "draft"}
+            hasDesign={project.status === "designed" || project.status === "completed"}
+            compact
+          />
         )}
 
         <PageTransition>{children}</PageTransition>

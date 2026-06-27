@@ -42,11 +42,19 @@ Use this checklist before promoting a staging or production release.
 
 ### PostGIS
 
+Alembic migrations `001` and `002` run `CREATE EXTENSION IF NOT EXISTS postgis` on PostgreSQL. **Manual SQL is optional** — only needed if the provider blocks extension creation from the app user.
+
+To verify after deploy:
+
+- [ ] `/api/system/status` → `postgis_available: true`
+
+If migrations fail and PostGIS is missing, run once in Render Postgres shell:
+
 ```sql
 CREATE EXTENSION IF NOT EXISTS postgis;
 ```
 
-- [ ] `/api/system/status` → `postgis_available: true`
+Then redeploy API + worker.
 
 ### Redis + worker
 

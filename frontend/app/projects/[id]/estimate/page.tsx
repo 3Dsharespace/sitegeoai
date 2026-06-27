@@ -14,7 +14,7 @@ import {
 } from "recharts";
 import { Box, Download, GitCompare, Layers, Save, Package, Shovel } from "lucide-react";
 import { ProjectError, ProjectLoading } from "@/components/layout/ProjectHeader";
-import ScenarioSelector from "@/components/workspace/ScenarioSelector";
+import ScenarioSelector from "@/components/scenarios/ScenarioSelector";
 import ChartCard from "@/components/project-results/ChartCard";
 import CostRangeCards from "@/components/project-results/CostRangeCards";
 import MetricCard from "@/components/project-results/MetricCard";

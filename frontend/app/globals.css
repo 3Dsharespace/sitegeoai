@@ -20,7 +20,7 @@
   --color-border: #1e293b;
   --color-primary: #3b82f6;
   --color-primary-foreground: #ffffff;
-  --color-accent: #06b6d4;
+  --color-accent: #22d3ee;
   --color-accent-foreground: #ffffff;
   --color-sidebar: #020617;
   --color-success: #22c55e;
@@ -117,6 +117,16 @@
   --shadow-md: 0 16px 40px rgba(0, 0, 0, 0.35);
   --shadow-lg: 0 24px 48px rgba(0, 0, 0, 0.45);
   --shadow-focus: 0 0 0 3px rgba(59, 130, 246, 0.22);
+
+  /* Marketing / landing (shared with app CTAs) */
+  --brand-name: "GeoAI Infrastructure Studio";
+  --marketing-primary: #38bdf8;
+  --marketing-secondary: #6366f1;
+  --gradient-cta: linear-gradient(135deg, #2563eb 0%, #3b82f6 45%, #22d3ee 100%);
+  --gradient-landing: linear-gradient(135deg, #38bdf8 0%, #6366f1 100%);
+  --shadow-glow-cyan: 0 0 24px -4px rgba(56, 189, 248, 0.5);
+  --shadow-glow-primary: 0 0 30px -4px rgba(34, 211, 238, 0.7);
+  --border-marketing: rgba(255, 255, 255, 0.08);
 
   /* Legacy aliases (map components) */
   --moon-white: #f8fafc;
@@ -252,21 +262,36 @@ input[type="radio"] {
 
 /* Buttons */
 .btn-primary-gradient {
-  background: var(--primary);
+  background: var(--gradient-cta);
   color: var(--primary-foreground);
   border: none;
   border-radius: var(--radius-button);
-  box-shadow: var(--shadow-sm);
-  transition: background-color 0.15s ease, box-shadow 0.15s ease;
+  box-shadow: var(--shadow-glow-primary);
+  transition: filter 0.15s ease, box-shadow 0.15s ease;
 }
 
 .btn-primary-gradient:hover {
-  background: var(--primary-hover);
-  box-shadow: var(--shadow-md);
+  filter: brightness(1.08);
+  box-shadow: var(--shadow-glow-primary);
 }
 
 .btn-primary-gradient:active {
-  background: var(--primary-active);
+  filter: brightness(0.95);
+}
+
+.btn-marketing {
+  background: var(--gradient-landing);
+  color: #05070a;
+  border: none;
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-glow-cyan);
+  font-weight: 600;
+  transition: filter 0.2s ease, box-shadow 0.2s ease;
+}
+
+.btn-marketing:hover {
+  filter: brightness(1.1);
+  box-shadow: var(--shadow-glow-primary);
 }
 
 .btn-glass {

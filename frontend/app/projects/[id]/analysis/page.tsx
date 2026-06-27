@@ -2,7 +2,7 @@
 
 import dynamic from "next/dynamic";
 import { useParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Building2, MapPin, Mountain, Route, ScanSearch, TriangleAlert } from "lucide-react";
 import { ProjectError, ProjectLoading } from "@/components/layout/ProjectHeader";
 import MetricCard from "@/components/project-results/MetricCard";
@@ -15,7 +15,7 @@ import { Button } from "@/components/ui/button";
 import { useProjectData } from "@/hooks/useProjectData";
 import { api } from "@/lib/api";
 import { formatArea, formatDistance } from "@/lib/geo";
-import type { SiteAnalysis } from "@/lib/types";
+import type { GeoJSONFeature, SiteAnalysis } from "@/lib/types";
 
 const MapView = dynamic(() => import("@/components/map/MapView"), { ssr: false });
 
@@ -52,11 +52,16 @@ export default function AnalysisPage() {
     }
   };
 
+  const roads = analysis?.nearby_roads_json?.features ?? [];
+  const buildings = analysis?.existing_buildings_json?.features ?? [];
+  const analysisFeatures = useMemo(
+    () => [...roads, ...buildings] as GeoJSONFeature[],
+    [analysis],
+  );
+
   if (loading) return <ProjectLoading />;
   if (error || !project) return <ProjectError error={error || "Not found"} onRetry={load} />;
 
-  const roads = analysis?.nearby_roads_json?.features ?? [];
-  const buildings = analysis?.existing_buildings_json?.features ?? [];
   const namedRoads = [
     ...new Set(roads.map((r) => String(r.properties?.name || "")).filter(Boolean)),
   ];
@@ -149,6 +154,9 @@ export default function AnalysisPage() {
             basemap="satellite"
             boundary={project.boundary_geojson}
             alignment={project.alignment_geojson}
+            analysisFeatures={analysisFeatures}
+            roadFeatures={roads as GeoJSONFeature[]}
+            buildingFeatures={buildings as GeoJSONFeature[]}
             hideFloatingTools
           />
 

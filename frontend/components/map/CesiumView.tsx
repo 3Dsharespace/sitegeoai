@@ -51,6 +51,7 @@ interface CesiumViewProps {
   surveyMode?: boolean;
   disableVendor3DTiles?: boolean;
   basemap?: MapBasemap;
+  modelOpacity?: number;
 }
 
 const LAYER_DS: Scene3DLayerKey[] = [
@@ -92,6 +93,7 @@ export default function CesiumView({
   surveyMode = false,
   disableVendor3DTiles = false,
   basemap = "satellite",
+  modelOpacity = 1,
 }: CesiumViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -656,6 +658,8 @@ export default function CesiumView({
         }
         viewer.scene.primitives.add(model);
         modelsRef.current.main = model;
+        model.color = Cesium.Color.WHITE.withAlpha(modelOpacity);
+        model.colorBlendMode = Cesium.ColorBlendMode.MIX;
         applyDesignMeshVisibilityWhenReady(
           model,
           useProjectStore.getState().designMeshCatalog,
@@ -684,6 +688,8 @@ export default function CesiumView({
         }
         viewer.scene.primitives.add(excav);
         modelsRef.current.excav = excav;
+        excav.color = Cesium.Color.WHITE.withAlpha(modelOpacity);
+        excav.colorBlendMode = Cesium.ColorBlendMode.MIX;
         applyDesignMeshVisibilityWhenReady(
           excav,
           useProjectStore.getState().designMeshCatalog,
@@ -716,7 +722,19 @@ export default function CesiumView({
     designMeshCatalog,
     designMeshVisibility,
     terrainEpoch,
+    modelOpacity,
   ]);
+
+  useEffect(() => {
+    const Cesium = cesiumRef.current;
+    if (!Cesium || !loaded) return;
+    const alpha = Math.min(1, Math.max(0.2, modelOpacity));
+    for (const model of [modelsRef.current.main, modelsRef.current.excav]) {
+      if (!model) continue;
+      model.color = Cesium.Color.WHITE.withAlpha(alpha);
+      model.colorBlendMode = Cesium.ColorBlendMode.MIX;
+    }
+  }, [loaded, modelOpacity]);
 
   // Re-anchor design models when terrain changes (keep ENU up, no axis tilt).
   useEffect(() => {

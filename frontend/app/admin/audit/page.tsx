@@ -1,0 +1,97 @@
+"use client";
+
+import { useCallback, useEffect, useState } from "react";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent } from "@/components/ui/card";
+import { api } from "@/lib/api";
+import { useAuthUser } from "@/lib/useAuthUser";
+
+interface AuditEntry {
+  id: number;
+  user_id: number | null;
+  action: string;
+  entity_type: string | null;
+  entity_id: number | null;
+  project_id: number | null;
+  metadata: Record<string, unknown> | null;
+  ip_address: string | null;
+  created_at: string | null;
+}
+
+interface AuditResponse {
+  total: number;
+  limit: number;
+  offset: number;
+  entries: AuditEntry[];
+}
+
+export default function AuditLogPage() {
+  const { isAdmin, loading: authLoading } = useAuthUser();
+  const [data, setData] = useState<AuditResponse | null>(null);
+  const [error, setError] = useState("");
+
+  const load = useCallback(() => {
+    api
+      .get<AuditResponse>("/api/admin/audit?limit=100")
+      .then(setData)
+      .catch((e) => setError(String(e instanceof Error ? e.message : e)));
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  return (
+    <div className="flex-1 overflow-y-auto">
+      <div className="max-w-6xl mx-auto w-full px-6 py-8 space-y-5">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Audit Log</h1>
+          <p className="text-sm text-muted-foreground mt-1">
+            Admin actions and security-relevant events.
+            {!isAdmin && !authLoading ? " Read-only view." : ""}
+          </p>
+        </div>
+
+        {error && <p className="text-sm text-destructive">{error}</p>}
+
+        <Card float className="overflow-hidden">
+          <CardContent className="p-0 overflow-x-auto">
+            <table className="data-table w-full min-w-[720px]">
+              <thead>
+                <tr>
+                  {["Time", "User", "Action", "Entity", "Project", "IP"].map((h) => (
+                    <th key={h}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {data?.entries.map((entry) => (
+                  <tr key={entry.id}>
+                    <td className="text-xs font-data whitespace-nowrap">
+                      {entry.created_at ? new Date(entry.created_at).toLocaleString() : "—"}
+                    </td>
+                    <td className="text-xs">{entry.user_id ?? "—"}</td>
+                    <td>
+                      <Badge variant="outline" className="text-[10px]">
+                        {entry.action}
+                      </Badge>
+                    </td>
+                    <td className="text-xs text-muted-foreground">
+                      {entry.entity_type ?? "—"}
+                      {entry.entity_id != null ? ` #${entry.entity_id}` : ""}
+                    </td>
+                    <td className="text-xs">{entry.project_id ?? "—"}</td>
+                    <td className="text-xs font-data text-muted-foreground">{entry.ip_address ?? "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {!data?.entries.length && !error && (
+              <p className="p-6 text-sm text-muted-foreground text-center">No audit entries yet.</p>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  );
+}

@@ -36,7 +36,7 @@ export default function WorkspacePage() {
     load,
   } = useProjectData(projectId, { activeJob });
 
-  useActiveJobPolling({
+  const { cancelJob, cancelling } = useActiveJobPolling({
     onCompleted: () => load({ silent: true }),
     onPreviewReady: () => load({ silent: true }),
   });
@@ -134,8 +134,12 @@ export default function WorkspacePage() {
   }, [projectId, load]);
 
   useEffect(() => {
-    if (typeof window !== "undefined" && window.location.hash === "#parameters") {
+    if (typeof window === "undefined" || loading) return;
+    if (window.location.hash === "#parameters") {
       document.getElementById("parameters-panel")?.scrollIntoView({ behavior: "smooth" });
+    }
+    if (window.location.hash === "#copilot") {
+      window.dispatchEvent(new CustomEvent("geoai:open-copilot"));
     }
   }, [loading]);
 
@@ -215,6 +219,8 @@ export default function WorkspacePage() {
             }
             onAnalyze={analyzeSite}
             onGenerationCompleted={load}
+            onCancelJob={cancelJob}
+            cancellingJob={cancelling}
           />
         }
         />

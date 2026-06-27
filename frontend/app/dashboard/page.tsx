@@ -1,24 +1,33 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   ArrowRight,
   Check,
   Circle,
   FolderOpen,
   MapPin,
+  Pencil,
   Plus,
+  Sparkles,
   Trash2,
 } from "lucide-react";
 import DisclaimerBanner from "@/components/DisclaimerBanner";
+import ApiErrorDetails from "@/components/ui/api-error-details";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { PageHeader } from "@/components/ui/page-header";
 import { Skeleton } from "@/components/ui/skeleton";
+import { StatCard } from "@/components/ui/stat-card";
+import WizardStepper from "@/components/ui/wizard-stepper";
 import { computeHealth, type ProjectHealth } from "@/lib/project-workflow";
-import { api } from "@/lib/api";
+import { api, ApiError } from "@/lib/api";
+import type { ParsedApiError } from "@/lib/api-errors";
+import { loginPath } from "@/lib/auth-routes";
 import { parseScenarioList } from "@/lib/scenario-api";
+import { useAuthUser } from "@/lib/useAuthUser";
 import type { DesignScenario, Project, ScenarioListResponse, ScenarioSummary, SiteAnalysis } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -37,6 +46,8 @@ const HEALTH_LABELS: { key: keyof ProjectHealth; label: string }[] = [
   { key: "hasDesign", label: "Design" },
   { key: "hasEstimate", label: "BOQ" },
 ];
+
+const EMPTY_STEPS = ["Create project", "Draw site", "Generate design"] as const;
 
 async function fetchProjectHealth(project: Project): Promise<ProjectHealth> {
   let scenarios: DesignScenario[] = [];
@@ -97,6 +108,41 @@ function HealthStrip({ health }: { health: ProjectHealth }) {
   );
 }
 
+function ProgressRing({ value, size = 44 }: { value: number; size?: number }) {
+  const r = (size - 6) / 2;
+  const c = 2 * Math.PI * r;
+  const clamped = Math.min(100, Math.max(0, value));
+  const offset = c - (clamped / 100) * c;
+  return (
+    <div className="relative shrink-0" style={{ width: size, height: size }}>
+      <svg width={size} height={size} className="-rotate-90" aria-hidden>
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={r}
+          fill="none"
+          strokeWidth={3}
+          className="stroke-muted/40"
+        />
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={r}
+          fill="none"
+          strokeWidth={3}
+          strokeDasharray={c}
+          strokeDashoffset={offset}
+          strokeLinecap="round"
+          className="stroke-primary transition-all duration-500"
+        />
+      </svg>
+      <span className="absolute inset-0 flex items-center justify-center text-[10px] font-data font-semibold text-foreground">
+        {clamped}%
+      </span>
+    </div>
+  );
+}
+
 async function loadProjectsWithHealth() {
   const list = await api.get<Project[]>("/api/projects");
   let healthEntries: [number, ProjectHealth][] = [];
@@ -136,21 +182,33 @@ async function loadProjectsWithHealth() {
 }
 
 export default function DashboardPage() {
+  const { isAdmin } = useAuthUser();
   const [projects, setProjects] = useState<Project[] | null>(null);
   const [healthMap, setHealthMap] = useState<Record<number, ProjectHealth>>({});
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<ParsedApiError | null>(null);
 
   const load = () =>
     loadProjectsWithHealth()
       .then(({ list, healthMap: hm }) => {
         setProjects(list);
         setHealthMap(hm);
+        setError(null);
       })
-      .catch((e) => setError(String(e.message ?? e)));
+      .catch((e) => {
+        if (e instanceof ApiError) setError(e.toParsed());
+        else setError({ status: 0, message: String(e instanceof Error ? e.message : e) });
+      });
 
   useEffect(() => {
     load();
   }, []);
+
+  const stats = useMemo(() => {
+    if (!projects) return null;
+    const inProgress = projects.filter((p) => (healthMap[p.id]?.progress ?? 0) < 100).length;
+    const withDesign = projects.filter((p) => healthMap[p.id]?.hasDesign).length;
+    return { total: projects.length, inProgress, withDesign };
+  }, [projects, healthMap]);
 
   const remove = async (id: number) => {
     if (!confirm("Delete this project and all its data?")) return;
@@ -168,32 +226,50 @@ export default function DashboardPage() {
   return (
     <div className="flex-1 overflow-y-auto">
       <div className="max-w-6xl mx-auto px-6 py-8 space-y-8">
-        <div className="flex items-start justify-between gap-4 flex-wrap">
-          <div>
-            <h1 className="text-[32px] font-bold tracking-tight">Project Dashboard</h1>
-            <p className="text-sm text-muted-foreground mt-1">
-              Infrastructure planning projects · GIS · AI · BIM
-            </p>
+        <PageHeader
+          title="Project Dashboard"
+          description="Infrastructure planning projects · GIS · AI · BIM"
+          actions={
+            <>
+              <Link href="/projects/new">
+                <Button className="gap-2">
+                  <Plus className="h-4 w-4" />
+                  New Project
+                </Button>
+              </Link>
+              {isAdmin && projects && projects.length > 0 && (
+                <Button variant="destructive" className="gap-2" onClick={removeAll}>
+                  <Trash2 className="h-4 w-4" />
+                  Clear Projects
+                </Button>
+              )}
+            </>
+          }
+        />
+
+        {stats && (
+          <div className="grid sm:grid-cols-3 gap-4">
+            <StatCard label="Projects" value={stats.total} icon={FolderOpen} />
+            <StatCard label="In progress" value={stats.inProgress} sub="Under 100% complete" icon={Pencil} />
+            <StatCard label="With design" value={stats.withDesign} sub="Generated scenarios" icon={Sparkles} />
           </div>
-          <Link href="/projects/new">
-            <Button className="gap-2">
-              <Plus className="h-4 w-4" />
-              New Project
-            </Button>
-          </Link>
-          {projects && projects.length > 0 && (
-            <Button variant="destructive" className="gap-2" onClick={removeAll}>
-              <Trash2 className="h-4 w-4" />
-              Clear Projects
-            </Button>
-          )}
-        </div>
+        )}
 
         {error && (
-          <Card className="border-destructive/30 bg-destructive/5 p-4">
-            <p className="text-sm text-destructive">
-              Could not reach the backend API: {error}. Start the backend at localhost:8000.
-            </p>
+          <Card className="border-destructive/30 bg-destructive/5 p-4 space-y-3">
+            <ApiErrorDetails error={error} />
+            {error.status === 401 && (
+              <Link href={loginPath("/dashboard")}>
+                <Button size="sm" variant="secondary">
+                  Sign in
+                </Button>
+              </Link>
+            )}
+            {error.status === 0 && (
+              <p className="text-xs text-muted-foreground">
+                Start the backend at localhost:8000 if you are developing locally.
+              </p>
+            )}
           </Card>
         )}
 
@@ -226,15 +302,34 @@ export default function DashboardPage() {
           )}
 
           {projects && projects.length === 0 && (
-            <Card className="border-dashed p-12 text-center">
-              <MapPin className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
-              <p className="font-medium mb-1">No projects yet</p>
-              <p className="text-sm text-muted-foreground mb-4">
-                Create your first preliminary plan to start a clean workspace.
-              </p>
-              <Link href="/projects/new">
-                <Button size="sm">Create Project</Button>
-              </Link>
+            <Card className="border-dashed p-8 sm:p-12">
+              <div className="max-w-lg mx-auto space-y-6 text-center">
+                <MapPin className="h-10 w-10 text-muted-foreground mx-auto" />
+                <div>
+                  <p className="font-medium mb-1">No projects yet</p>
+                  <p className="text-sm text-muted-foreground">
+                    Follow the workflow below to create your first preliminary plan.
+                  </p>
+                </div>
+                <WizardStepper steps={EMPTY_STEPS} current={0} />
+                <div className="grid gap-3 text-left text-xs text-muted-foreground sm:grid-cols-3">
+                  <div className="rounded-lg border border-border/60 p-3">
+                    <p className="font-semibold text-foreground mb-1">1. Create</p>
+                    Name the project and pick infrastructure type.
+                  </div>
+                  <div className="rounded-lg border border-border/60 p-3">
+                    <p className="font-semibold text-foreground mb-1">2. Draw</p>
+                    Place the site and draw boundary or alignment on the map.
+                  </div>
+                  <div className="rounded-lg border border-border/60 p-3">
+                    <p className="font-semibold text-foreground mb-1">3. Generate</p>
+                    Run AI Design Studio for a conceptual 3D layout and BOQ.
+                  </div>
+                </div>
+                <Link href="/projects/new">
+                  <Button size="sm">Create Project</Button>
+                </Link>
+              </div>
             </Card>
           )}
 
@@ -244,6 +339,7 @@ export default function DashboardPage() {
               return (
                 <Card key={p.id} float className="hover:border-primary/40 transition-colors">
                   <CardContent className="p-4 flex items-start gap-4 flex-wrap">
+                    {health && <ProgressRing value={health.progress} />}
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1 flex-wrap">
                         <Link
@@ -256,11 +352,6 @@ export default function DashboardPage() {
                           {p.project_type}
                         </Badge>
                         <Badge variant="default">{p.status}</Badge>
-                        {health && (
-                          <span className="text-[10px] font-data text-muted-foreground">
-                            {health.progress}% complete
-                          </span>
-                        )}
                       </div>
                       <p className="text-xs text-muted-foreground truncate flex items-center gap-1">
                         <MapPin className="h-3 w-3 shrink-0" />

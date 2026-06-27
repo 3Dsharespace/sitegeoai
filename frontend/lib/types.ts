@@ -297,6 +297,7 @@ export interface ScenarioSummary {
   preview_url?: string | null;
   report_url?: string | null;
   key_assumptions?: string[];
+  duration_months?: number | null;
 }
 
 export interface ScenarioListResponse {
@@ -320,6 +321,7 @@ export interface ScenarioCompareRow {
   warning_count?: number;
   error_count?: number;
   recommendations?: string[];
+  duration_months?: number | null;
 }
 
 export interface ScenarioCompareResult {

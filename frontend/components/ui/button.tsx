@@ -11,7 +11,8 @@ const buttonVariants = cva(
         secondary: "btn-glass",
         outline: "bg-transparent border border-[rgba(148,163,184,0.22)] text-foreground hover:bg-[rgba(148,163,184,0.12)]",
         ghost: "btn-ghost",
-        accent: "bg-[rgba(6,182,212,0.14)] text-accent border border-[rgba(6,182,212,0.28)] hover:bg-[rgba(6,182,212,0.22)]",
+        accent: "bg-[rgba(34,211,238,0.14)] text-accent border border-[rgba(34,211,238,0.28)] hover:bg-[rgba(34,211,238,0.22)]",
+        marketing: "btn-marketing text-[#05070A] shadow-[var(--shadow-glow-cyan)] hover:brightness-110",
         destructive: "btn-danger",
       },
       size: {

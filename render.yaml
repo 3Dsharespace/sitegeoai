@@ -13,6 +13,8 @@ databases:
 envVarGroups:
   - name: geoai-backend
     envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.7"
       - key: ENVIRONMENT
         value: production
       - key: AUTH_REQUIRE_JWT

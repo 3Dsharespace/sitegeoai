@@ -155,6 +155,7 @@ def build_scenario_summary(
         "preview_url": preview_url,
         "report_url": f"/api/projects/{project.id}/exports/pdf",
         "key_assumptions": (scenario.assumptions_json or design.get("assumptions") or [])[:5],
+        "duration_months": (calc.get("timeline") or {}).get("estimated_months_medium"),
     }
 
 
@@ -214,6 +215,7 @@ def _comparison_row(summary: dict[str, Any]) -> dict[str, Any]:
         "warning_count": summary.get("warning_count", 0),
         "error_count": summary.get("error_count", 0),
         "recommendations": [],
+        "duration_months": summary.get("duration_months"),
     }
 
 
