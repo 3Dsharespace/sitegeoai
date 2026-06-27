@@ -1,9 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { api } from "@/lib/api";
+import ApiErrorDetails from "@/components/ui/api-error-details";
+import { loginPath } from "@/lib/auth-routes";
+import { api, ApiError } from "@/lib/api";
+import type { ParsedApiError } from "@/lib/api-errors";
 import { useAuthUser } from "@/lib/useAuthUser";
 
 interface AuditEntry {
@@ -28,13 +33,19 @@ interface AuditResponse {
 export default function AuditLogPage() {
   const { isAdmin, loading: authLoading } = useAuthUser();
   const [data, setData] = useState<AuditResponse | null>(null);
-  const [error, setError] = useState("");
+  const [error, setError] = useState<ParsedApiError | null>(null);
 
   const load = useCallback(() => {
     api
       .get<AuditResponse>("/api/admin/audit?limit=100")
-      .then(setData)
-      .catch((e) => setError(String(e instanceof Error ? e.message : e)));
+      .then((next) => {
+        setData(next);
+        setError(null);
+      })
+      .catch((e) => {
+        if (e instanceof ApiError) setError(e.toParsed());
+        else setError({ status: 0, message: String(e instanceof Error ? e.message : e) });
+      });
   }, []);
 
   useEffect(() => {
@@ -52,7 +63,26 @@ export default function AuditLogPage() {
           </p>
         </div>
 
-        {error && <p className="text-sm text-destructive">{error}</p>}
+        {error && (
+          <Card className="border-destructive/30 bg-destructive/5 p-4 space-y-3">
+            <ApiErrorDetails error={error} />
+            {error.status === 401 && (
+              <Link href={loginPath("/admin/audit")}>
+                <Button size="sm" variant="secondary">
+                  Sign in
+                </Button>
+              </Link>
+            )}
+            {error.status === 0 && (
+              <p className="text-xs text-muted-foreground">
+                Check that the API is running and `NEXT_PUBLIC_API_URL` is correct, then retry.
+              </p>
+            )}
+            <Button size="sm" variant="outline" onClick={load}>
+              Retry
+            </Button>
+          </Card>
+        )}
 
         <Card float className="overflow-hidden">
           <CardContent className="p-0 overflow-x-auto">
