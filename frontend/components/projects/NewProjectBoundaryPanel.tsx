@@ -1,8 +1,6 @@
 "use client";
 
 import {
-  Building2,
-  Droplets,
   MousePointer2,
   RectangleHorizontal,
   Route,

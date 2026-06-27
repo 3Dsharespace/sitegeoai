@@ -272,8 +272,7 @@ export function useProjectData(projectId: number, options?: { activeJob?: JobSta
     });
   }, [
     project,
-    resolvedModels.modelUrl,
-    resolvedModels.modelSource,
+    resolvedModels,
     scenario?.id,
     generating,
   ]);

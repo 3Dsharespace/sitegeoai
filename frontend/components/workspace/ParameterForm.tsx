@@ -306,6 +306,8 @@ export default function ParameterForm({
   };
 
   if (toolbar) {
+    // React Hook Form watch() is intentionally used for live toolbar summary text.
+    // eslint-disable-next-line react-hooks/incompatible-library -- RHF watch for toolbar preview
     const watched = form.watch();
     const summaryParts: string[] = [];
     if (family === "flyover") {

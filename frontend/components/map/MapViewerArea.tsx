@@ -23,6 +23,7 @@ import { useProjectStore } from "@/stores/projectStore";
 import { basemapFor3d, fetchTileProviders, type MapBasemap } from "@/lib/map-imagery";
 import MapStyleToggle from "@/components/ui/map-style-toggle";
 import { toolRequires2dMap } from "@/lib/map/workspace-map-tools";
+import { shouldMountCesiumView } from "@/lib/map-view-mode";
 import { cn } from "@/lib/utils";
 
 const MapView = dynamic(() => import("@/components/map/MapView"), { ssr: false });
@@ -556,7 +557,7 @@ export default function MapViewerArea({
           filter: `brightness(${satelliteBrightness}%)`,
         }}
       >
-        {view === "2d" ? (
+        {view === "2d" || !shouldMountCesiumView(view) ? (
           <MapView
             center={mapCenter}
             zoom={15}

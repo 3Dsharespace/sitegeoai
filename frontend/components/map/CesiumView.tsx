@@ -160,8 +160,7 @@ export default function CesiumView({
   };
 
   /** Photorealistic Ion/Google 3D tiles — gated by the "3D city tiles" layer. */
-  const vendorPhotorealisticTilesEnabled = () =>
-    !disableVendor3DTiles && useProjectStore.getState().layers.tiles3d;
+  const photorealisticTilesOn = !disableVendor3DTiles && layers.tiles3d;
 
   // Init viewer
   useEffect(() => {
@@ -337,7 +336,7 @@ export default function CesiumView({
     if (transparentOn) {
       applyGlobeTranslucency(viewer, Cesium);
     } else {
-      resetGlobeTranslucency(viewer, Cesium);
+      resetGlobeTranslucency(viewer);
       resetImageryAlpha(viewer);
     }
     viewer.scene.requestRender();
@@ -349,7 +348,7 @@ export default function CesiumView({
     const Cesium = cesiumRef.current;
     if (!viewer || !Cesium || !loaded) return;
 
-    const enabled = vendorPhotorealisticTilesEnabled();
+    const enabled = photorealisticTilesOn;
 
     cesiumDevLog(
       "buildings",
@@ -369,7 +368,7 @@ export default function CesiumView({
       }
 
       const providers = await fetchTileProviders();
-      if (cancelled || !vendorPhotorealisticTilesEnabled()) return;
+      if (cancelled || !photorealisticTilesOn) return;
 
       photorealisticTilesRef.current = await syncPhotorealisticTiles({
         viewer,
@@ -384,9 +383,7 @@ export default function CesiumView({
     return () => {
       cancelled = true;
     };
-  }, [loaded, disableVendor3DTiles, layers.tiles3d, terrainEpoch]);
-
-  // Context layers: roads, buildings, water, alignment, boundary
+  }, [loaded, photorealisticTilesOn, terrainEpoch]);
   useEffect(() => {
     const viewer = viewerRef.current;
     const Cesium = cesiumRef.current;

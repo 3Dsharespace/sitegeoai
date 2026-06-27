@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Building2, FormEvent, useState } from "react";
+import { FormEvent, useState } from "react";
+import { Building2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { FormField } from "@/components/ui/form-field";
@@ -23,6 +24,7 @@ export default function LoginPageInner() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const formErrorId = "login-form-error";
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
@@ -76,7 +78,7 @@ export default function LoginPageInner() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <form onSubmit={onSubmit} className="space-y-4">
+            <form onSubmit={onSubmit} className="space-y-4" aria-describedby={error ? formErrorId : undefined}>
               {mode === "register" && (
                 <FormField label="Name" htmlFor="name">
                   <input
@@ -112,7 +114,11 @@ export default function LoginPageInner() {
                 />
               </FormField>
               {error && (
-                <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+                <div
+                  id={formErrorId}
+                  role="alert"
+                  className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+                >
                   {error}
                 </div>
               )}

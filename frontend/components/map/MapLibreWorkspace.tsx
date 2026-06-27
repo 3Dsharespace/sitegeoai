@@ -61,7 +61,7 @@ export default function MapLibreWorkspace({
   const [terrainMessage, setTerrainMessage] = useState<string | null>(null);
   const [google3dEnabled, setGoogle3dEnabled] = useState(false);
   const [buildingsEnabled, setBuildingsEnabled] = useState(true);
-  const [aiPlaceholderEnabled, setAiPlaceholderEnabled] = useState(true);
+  const [aiPlaceholderEnabled] = useState(true);
   const [drawingError, setDrawingError] = useState<string | null>(null);
   const [deleteSignal, setDeleteSignal] = useState(0);
 

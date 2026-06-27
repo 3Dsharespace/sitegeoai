@@ -52,12 +52,14 @@ export default function AnalysisPage() {
     }
   };
 
+  const analysisFeatures = useMemo(() => {
+    const roadFeatures = analysis?.nearby_roads_json?.features ?? [];
+    const buildingFeatures = analysis?.existing_buildings_json?.features ?? [];
+    return [...roadFeatures, ...buildingFeatures] as GeoJSONFeature[];
+  }, [analysis?.nearby_roads_json, analysis?.existing_buildings_json]);
+
   const roads = analysis?.nearby_roads_json?.features ?? [];
   const buildings = analysis?.existing_buildings_json?.features ?? [];
-  const analysisFeatures = useMemo(
-    () => [...roads, ...buildings] as GeoJSONFeature[],
-    [analysis],
-  );
 
   if (loading) return <ProjectLoading />;
   if (error || !project) return <ProjectError error={error || "Not found"} onRetry={load} />;

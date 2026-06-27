@@ -19,7 +19,10 @@ export default function TimelinePage() {
   const projectId = Number(params.id);
   const { project, design, calc, summaryStats, loading, error, load } = useProjectData(projectId);
 
-  const sequence = design?.construction_sequence ?? [];
+  const sequence = useMemo(
+    () => design?.construction_sequence ?? [],
+    [design?.construction_sequence],
+  );
   const timeline = calc?.timeline;
   const months = timeline?.estimated_months_medium as number | undefined;
   const timelineNote = typeof timeline?.note === "string" ? timeline.note : null;

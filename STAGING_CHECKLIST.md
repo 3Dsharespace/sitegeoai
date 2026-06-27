@@ -139,6 +139,18 @@ Smoke test verifies:
 
 - [ ] GitHub Actions `CI` workflow green on target branch
 - [ ] Backend pytest + frontend lint/test/build passed
+- [ ] ESLint runs with `--max-warnings 0`
+- [ ] Playwright critical-path E2E passed (register → workspace)
+- [ ] Optional: run **Staging smoke** workflow (`staging-smoke.yml`) against staging API
+
+## Polish checklist
+
+- [ ] `npm run lint` — zero warnings
+- [ ] `npm test` — Vitest unit/component tests green
+- [ ] `npm run test:e2e` — Playwright critical path (local or CI)
+- [ ] `ANALYZE=true npm run build` — review largest bundles (Cesium, map libs)
+- [ ] Accessibility: skip link, mobile More menu, login errors, nav drawer focus
+- [ ] Manual smoke: `python backend/scripts/production_smoke.py --base-url <staging-api>`
 
 ## Rollback plan
 

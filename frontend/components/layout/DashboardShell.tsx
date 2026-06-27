@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
 import { ChevronRight, Building2, Download, Menu, Plus, Save, X } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRequireAuth } from "@/components/auth/RequireAuth";
 import { BRAND_NAME } from "@/components/landing/landing-theme";
 import ProjectStepper from "@/components/layout/ProjectStepper";
@@ -16,6 +16,7 @@ import DisclaimerBanner from "@/components/DisclaimerBanner";
 import PageTransition from "@/components/motion/PageTransition";
 import { ProjectHeaderContent } from "@/components/layout/ProjectHeader";
 import { useDemoProjectId } from "@/lib/useDemoProjectId";
+import { useAuthUser } from "@/lib/useAuthUser";
 import {
   ENGINEERING_TOOLS,
   MAIN_NAV,
@@ -24,6 +25,7 @@ import {
   SETTINGS_NAV,
 } from "@/lib/navigation";
 import { cn } from "@/lib/utils";
+import { useFocusTrap } from "@/lib/useFocusTrap";
 import { type MapTool, useProjectStore } from "@/stores/projectStore";
 
 const NAV_WIDTH = 248;
@@ -235,6 +237,10 @@ export default function DashboardShell({ children }: { children: React.ReactNode
 
   const [navOpen, setNavOpen] = useState(() => !isProjectWorkspace);
   const [navPath, setNavPath] = useState(pathname);
+  const navAsideRef = useRef<HTMLElement>(null);
+  const navToggleRef = useRef<HTMLButtonElement>(null);
+
+  useFocusTrap(navAsideRef, navOpen, () => setNavOpen(false));
 
   if (pathname !== navPath) {
     setNavPath(pathname);
@@ -253,19 +259,18 @@ export default function DashboardShell({ children }: { children: React.ReactNode
     }
   }, [inProject]);
 
-  // Escape closes drawer
   useEffect(() => {
-    if (!navOpen) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setNavOpen(false);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    if (!navOpen) {
+      navToggleRef.current?.focus();
+      return;
+    }
+    const firstLink = navAsideRef.current?.querySelector<HTMLElement>("a[href]");
+    firstLink?.focus();
   }, [navOpen]);
 
   if (isLanding || isLogin) {
     return (
-      <main className="flex flex-1 flex-col min-h-screen bg-background">
+      <main id="main-content" className="flex flex-1 flex-col min-h-screen bg-background">
         <PageTransition>{children}</PageTransition>
       </main>
     );
@@ -291,6 +296,7 @@ export default function DashboardShell({ children }: { children: React.ReactNode
       </AnimatePresence>
 
       <motion.aside
+        ref={navAsideRef}
         initial={false}
         animate={{ x: navOpen ? 0 : -NAV_WIDTH }}
         transition={{ type: "spring", stiffness: 400, damping: 35 }}
@@ -314,6 +320,7 @@ export default function DashboardShell({ children }: { children: React.ReactNode
         {!workspaceFullscreen && (
           <header className="app-header sticky top-0 z-30 flex min-h-12 items-center gap-2 border-b border-[rgba(148,163,184,0.16)] bg-[rgba(5,7,10,0.88)] px-3 py-1.5 shadow-[0_12px_32px_rgba(0,0,0,0.28)] backdrop-blur-xl">
             <Button
+              ref={navToggleRef}
               variant="ghost"
               size="icon"
               className="h-9 w-9 shrink-0 text-[#CBD5E1] hover:bg-white/[0.06] hover:text-[#F8FAFC]"
@@ -389,7 +396,9 @@ export default function DashboardShell({ children }: { children: React.ReactNode
           />
         )}
 
-        <PageTransition>{children}</PageTransition>
+        <main id="main-content" className="flex flex-1 flex-col min-h-0 overflow-hidden">
+          <PageTransition>{children}</PageTransition>
+        </main>
 
         {!pathname?.includes("/workspace") &&
           !pathname?.includes("/map") &&

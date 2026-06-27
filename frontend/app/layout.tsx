@@ -23,6 +23,12 @@ export default function RootLayout({
       className={`dark h-full antialiased ${inter.variable} ${jetbrainsMono.variable}`}
     >
       <body className="flex h-full flex-col overflow-hidden bg-ambient font-sans">
+        <a
+          href="#main-content"
+          className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-[100] focus:rounded-md focus:bg-primary focus:px-4 focus:py-2 focus:text-primary-foreground"
+        >
+          Skip to main content
+        </a>
         <ThemeProvider>
           <DashboardShell>{children}</DashboardShell>
           <Toaster />

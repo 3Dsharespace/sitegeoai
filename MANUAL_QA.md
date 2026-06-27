@@ -51,7 +51,8 @@ Run in order without refreshing unless noted.
 | Page | Route | Checks |
 |------|-------|--------|
 | Landing | `/` | Hero, CTA to dashboard, dark theme, disclaimer |
-| Dashboard | `/dashboard` | Project list, demo card, new project link |
+| Login | `/login` | Register + sign in, error alerts, redirect to `?next=` target |
+| Dashboard | `/dashboard` | Project list, demo card, new project link, skip link (Tab) |
 | New project | `/projects/new` | Wizard steps, validation, creates project |
 
 ### Project workspace
@@ -76,13 +77,15 @@ Run in order without refreshing unless noted.
 | Providers | `/settings/api-keys` | Shows configured/not configured (no raw keys) |
 | Rates | `/admin/rates` | Table editable |
 | Templates | `/admin/templates` | Template list |
+| Audit log | `/admin/audit` | Event list loads (admin only) |
+| Usage | `/admin/usage` | Plan usage summary (admin only) |
 
 ---
 
 ## Visual QA
 
 - [ ] **Dark theme** consistent (no light panels, readable text)
-- [ ] **Mobile (~390px)** — bottom nav, no horizontal overflow, drawers work
+- [ ] **Mobile (~390px)** — bottom nav, **More** menu (Escape closes, focus trap), no horizontal overflow, drawers work
 - [ ] **Tablet (~768px)** — sidebar collapses appropriately
 - [ ] **Desktop (~1440px)** — workspace layout balanced
 - [ ] **Sidebar/header** — active route highlighted

@@ -2,9 +2,8 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState } from "react";
-import {
-  BarChart3,
+import { useEffect, useRef, useState } from "react";
+import {  BarChart3,
   Box,
   Clock,
   FileText,
@@ -16,6 +15,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useFocusTrap } from "@/lib/useFocusTrap";
 
 const PRIMARY_TABS = (projectId: number) => [
   { href: `/projects/${projectId}/map`, label: "Map", icon: Globe },
@@ -35,9 +35,21 @@ const MORE_TABS = (projectId: number) => [
 export default function MobileBottomNav({ projectId }: { projectId: number }) {
   const pathname = usePathname();
   const [moreOpen, setMoreOpen] = useState(false);
+  const morePanelRef = useRef<HTMLDivElement>(null);
   const tabs = PRIMARY_TABS(projectId);
   const moreTabs = MORE_TABS(projectId);
   const moreActive = moreTabs.some((t) => pathname === t.href || pathname?.startsWith(t.href));
+
+  useFocusTrap(morePanelRef, moreOpen, () => setMoreOpen(false));
+
+  useEffect(() => {
+    if (!moreOpen) return;
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") setMoreOpen(false);
+    }
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [moreOpen]);
 
   return (
     <>
@@ -49,7 +61,13 @@ export default function MobileBottomNav({ projectId }: { projectId: number }) {
         />
       )}
       {moreOpen && (
-        <div className="md:hidden fixed bottom-14 inset-x-2 z-40 rounded-xl border border-border bg-card p-2 shadow-lg grid grid-cols-3 gap-1">
+        <div
+          ref={morePanelRef}
+          id="mobile-more-menu"
+          role="menu"
+          aria-label="More project pages"
+          className="md:hidden fixed bottom-14 inset-x-2 z-40 rounded-xl border border-border bg-card p-2 shadow-lg grid grid-cols-3 gap-1"
+        >
           {moreTabs.map(({ href, label, icon: Icon }) => {
             const active = pathname === href;
             return (
@@ -90,6 +108,9 @@ export default function MobileBottomNav({ projectId }: { projectId: number }) {
           <button
             type="button"
             onClick={() => setMoreOpen((o) => !o)}
+            aria-expanded={moreOpen}
+            aria-haspopup="menu"
+            aria-controls="mobile-more-menu"
             className={cn(
               "flex flex-1 flex-col items-center justify-center gap-0.5 text-[10px]",
               moreActive || moreOpen ? "text-primary" : "text-muted-foreground",

@@ -267,7 +267,7 @@ export function applyIonOsmBuildingTileStyle(Cesium: any, tileset: any) {
 
 /** Reset globe translucency when transparent / underground mode is off. */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function resetGlobeTranslucency(viewer: any, Cesium: any) {
+export function resetGlobeTranslucency(viewer: any) {
   const globe = viewer?.scene?.globe;
   if (!globe?.translucency) return;
   globe.translucency.enabled = false;
