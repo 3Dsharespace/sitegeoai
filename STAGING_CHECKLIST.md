@@ -64,10 +64,10 @@ Then redeploy API + worker.
 
 ### S3 / object storage
 
-- [ ] `/api/system/status` → `storage_mode: s3` (not `local` in production)
-- [ ] No critical `local_storage` warning in `production.warnings`
-- [ ] `PUBLIC_API_URL` set to Render API URL (or rely on `RENDER_EXTERNAL_URL`)
-- [ ] Production smoke: `model URL reachable` passes
+- [ ] Follow [STORAGE_SETUP.md](./STORAGE_SETUP.md) (R2 or AWS)
+- [ ] `/api/system/status` → `storage_mode: s3` (not `local`)
+- [ ] No critical `local_storage` warning
+- [ ] Production smoke: `model URL reachable` passes (200, not 404 advisory)
 
 ## Auth
 

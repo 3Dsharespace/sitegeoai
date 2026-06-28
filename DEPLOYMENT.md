@@ -265,7 +265,7 @@ S3_ACCESS_KEY=geoai
 S3_SECRET_KEY=your-minio-secret
 ```
 
-**Production:** use AWS S3, Cloudflare R2, or similar.
+**Production:** use AWS S3, Cloudflare R2, or similar. **Step-by-step:** [STORAGE_SETUP.md](./STORAGE_SETUP.md) (R2 recommended).
 
 | Provider | Required vars | Notes |
 |----------|---------------|-------|
