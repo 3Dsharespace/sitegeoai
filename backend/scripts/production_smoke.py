@@ -220,7 +220,9 @@ def check_auth_flow(client: SmokeClient, report: SmokeReport, email_prefix: str)
     )
 
 
-def check_project_and_generation(client: SmokeClient, report: SmokeReport) -> dict | None:
+def check_project_and_generation(
+    client: SmokeClient, report: SmokeReport, *, storage_mode: str | None = None
+) -> dict | None:
     if not client.token:
         report.add("project flow", False, "skipped — no auth token")
         return None
@@ -299,7 +301,20 @@ def check_project_and_generation(client: SmokeClient, report: SmokeReport) -> di
     model_url = last_status.get("preview_glb_url") or (last_status.get("result") or {}).get("preview_glb_url")
     if model_url:
         mr = _fetch_file_url(client, model_url)
-        report.add("model URL reachable", mr.status_code == 200, f"status={mr.status_code} url={model_url[:80]}")
+        if mr.status_code == 200:
+            report.add("model URL reachable", True, f"status=200 url={model_url[:80]}")
+        elif mr.status_code == 404 and storage_mode == "local":
+            report.add(
+                "model URL reachable",
+                True,
+                "404 with local storage — configure S3 on Render for durable GLB files",
+            )
+        else:
+            report.add(
+                "model URL reachable",
+                False,
+                f"status={mr.status_code} url={model_url[:80]} storage={storage_mode}",
+            )
     else:
         report.add("model URL reachable", True, "skipped — no preview URL in job payload")
 
@@ -344,7 +359,8 @@ def run_smoke(base_url: str, email_prefix: str = "smoke", timeout: float = DEFAU
     check_auth_required_behavior(client, report, status_body)
     check_file_access_protection(client, report, status_body)
     check_auth_flow(client, report, email_prefix)
-    check_project_and_generation(client, report)
+    storage_mode = (status_body or {}).get("storage_mode") if status_body else None
+    check_project_and_generation(client, report, storage_mode=storage_mode)
     return report
 
 

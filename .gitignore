@@ -26,6 +26,8 @@ node_modules/
 .next/
 out/
 frontend/public/cesium/
+frontend/test-results/
+frontend/playwright-report/
 
 # deploy / IDE
 .netlify/
