@@ -20,6 +20,9 @@ class Settings(BaseSettings):
     S3_BUCKET: str = "geoai-files"
     S3_ACCESS_KEY: str = ""
     S3_SECRET_KEY: str = ""
+    S3_REGION: str = ""
+    # Public API URL for /files/ links (defaults to RENDER_EXTERNAL_URL on Render).
+    PUBLIC_API_URL: str = ""
 
     GOOGLE_MAPS_API_KEY: str = ""
     CESIUM_ION_TOKEN: str = ""

@@ -265,7 +265,21 @@ S3_ACCESS_KEY=geoai
 S3_SECRET_KEY=your-minio-secret
 ```
 
-**Production:** use AWS S3, Cloudflare R2, or similar. Set all four `S3_*` vars on Render.
+**Production:** use AWS S3, Cloudflare R2, or similar.
+
+| Provider | Required vars | Notes |
+|----------|---------------|-------|
+| **MinIO** (local/docker) | `S3_ENDPOINT`, `S3_BUCKET`, `S3_ACCESS_KEY`, `S3_SECRET_KEY` | Bucket auto-created |
+| **AWS S3** | `S3_BUCKET`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`, `S3_REGION` | Create bucket first; omit `S3_ENDPOINT` |
+| **Cloudflare R2** | All four `S3_*` + `S3_ENDPOINT` (R2 URL) | Use R2 access keys |
+
+Also set **`PUBLIC_API_URL`** to your Render API URL (e.g. `https://geoai-api-91oc.onrender.com`) so local `/files/` links work until S3 is configured. On Render, **`RENDER_EXTERNAL_URL`** is used automatically when `PUBLIC_API_URL` is unset.
+
+Run smoke after deploy:
+
+```bash
+python backend/scripts/production_smoke.py --base-url https://YOUR-API.onrender.com
+```
 
 ---
 

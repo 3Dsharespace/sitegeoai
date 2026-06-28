@@ -12,6 +12,7 @@ from app.db.session import get_db
 from app.services.exports.csv_export import build_boq_csv
 from app.services.exports.geojson_export import build_geojson
 from app.services.exports.pdf_report import build_pdf
+from app.services.storage import normalize_file_url
 from app.services.usage import enforce_usage_limit, record_usage_event
 
 router = APIRouter(prefix="/api/projects/{project_id}/exports", tags=["exports"])
@@ -110,7 +111,11 @@ def export_json(
             "line_items": estimate.line_items_json,
         } if estimate else None,
         "generated_files": [
-            {"file_type": f.file_type, "file_url": f.file_url, "metadata": f.metadata_json}
+            {
+                "file_type": f.file_type,
+                "file_url": normalize_file_url(f.file_url),
+                "metadata": f.metadata_json,
+            }
             for f in files
         ],
     }
@@ -244,7 +249,12 @@ def list_files(project_id: int, db: Session = Depends(get_db), user_id: int = De
         .all()
     )
     return [
-        {"id": f.id, "file_type": f.file_type, "file_url": f.file_url,
-         "scenario_id": f.design_scenario_id, "created_at": f.created_at}
+        {
+            "id": f.id,
+            "file_type": f.file_type,
+            "file_url": normalize_file_url(f.file_url),
+            "scenario_id": f.design_scenario_id,
+            "created_at": f.created_at,
+        }
         for f in files
     ]

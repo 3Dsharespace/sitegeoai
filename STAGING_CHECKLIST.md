@@ -66,6 +66,8 @@ Then redeploy API + worker.
 
 - [ ] `/api/system/status` → `storage_mode: s3` (not `local` in production)
 - [ ] No critical `local_storage` warning in `production.warnings`
+- [ ] `PUBLIC_API_URL` set to Render API URL (or rely on `RENDER_EXTERNAL_URL`)
+- [ ] Production smoke: `model URL reachable` passes
 
 ## Auth
 

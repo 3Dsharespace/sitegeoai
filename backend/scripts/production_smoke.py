@@ -16,7 +16,7 @@ import time
 import uuid
 from dataclasses import dataclass, field
 from typing import Any
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse
 
 import httpx
 
@@ -85,6 +85,22 @@ class SmokeClient:
 
     def post(self, path: str, payload: dict | None = None) -> httpx.Response:
         return self._capture(self.client.post(self.url(path), headers=self.headers(), json=payload or {}))
+
+
+def _fetch_file_url(client: SmokeClient, file_url: str) -> httpx.Response:
+    """Fetch a model/file URL via the smoke client (handles localhost rewrite)."""
+    if file_url.startswith("/files/"):
+        return client.get(file_url)
+    parsed = urlparse(file_url)
+    if parsed.path.startswith("/files/"):
+        if parsed.hostname in (None, "localhost", "127.0.0.1"):
+            return client.get(parsed.path)
+    if file_url.startswith(client.base_url):
+        suffix = file_url[len(client.base_url) :]
+        return client.get(suffix if suffix.startswith("/") else f"/{suffix}")
+    if file_url.startswith("http"):
+        return client.client.get(file_url, headers=client.headers())
+    return client.get(file_url)
 
 
 def _safe_json(response: httpx.Response) -> Any:
@@ -282,11 +298,8 @@ def check_project_and_generation(client: SmokeClient, report: SmokeReport) -> di
 
     model_url = last_status.get("preview_glb_url") or (last_status.get("result") or {}).get("preview_glb_url")
     if model_url:
-        if model_url.startswith("http"):
-            mr = client.client.get(model_url, headers=client.headers())
-        else:
-            mr = client.get(model_url)
-        report.add("model URL reachable", mr.status_code == 200, f"status={mr.status_code}")
+        mr = _fetch_file_url(client, model_url)
+        report.add("model URL reachable", mr.status_code == 200, f"status={mr.status_code} url={model_url[:80]}")
     else:
         report.add("model URL reachable", True, "skipped — no preview URL in job payload")
 

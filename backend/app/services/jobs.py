@@ -11,6 +11,7 @@ from typing import Any
 
 from app.core.config import settings
 from app.services.job_errors import JobCancelledError, JobTimeoutError, classify_exception
+from app.services.storage import normalize_file_url
 
 logger = logging.getLogger(__name__)
 
@@ -239,6 +240,15 @@ def public_status(job_id: str) -> dict | None:
         out["error"] = out["safe_error_message"]
     elif out.get("error"):
         out["error"] = "Design generation failed."
+    if out.get("preview_glb_url"):
+        out["preview_glb_url"] = normalize_file_url(out["preview_glb_url"])
+    result = out.get("result")
+    if isinstance(result, dict):
+        normalized = dict(result)
+        for key in ("preview_glb_url", "glb_url", "final_glb_url", "excavation_glb_url"):
+            if key in normalized and isinstance(normalized[key], str):
+                normalized[key] = normalize_file_url(normalized[key])
+        out["result"] = normalized
     return out
 
 

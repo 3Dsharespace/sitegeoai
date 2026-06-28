@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.core.project_catalog import project_type_family
 from app.db.models import DesignScenario, GeneratedFile, Project, QuantityEstimate
+from app.services.storage import normalize_file_url
 
 COMPARISON_DISCLAIMER = (
     "Scenario comparison is for preliminary planning only — not final engineering approval."
@@ -112,8 +113,8 @@ def build_scenario_summary(
         or review.get("final_parameters", {}).get("road_width_m")
     )
 
-    model_url = next((f.file_url for f in files if f.file_type == "glb"), None)
-    preview_url = next((f.file_url for f in files if f.file_type == "glb-preview"), None)
+    model_url = normalize_file_url(next((f.file_url for f in files if f.file_type == "glb"), None))
+    preview_url = normalize_file_url(next((f.file_url for f in files if f.file_type == "glb-preview"), None))
 
     pier_spacing = params.get("pier_spacing_m")
     length_m = (
@@ -190,7 +191,7 @@ def build_scenario_detail(
             {
                 "id": f.id,
                 "file_type": f.file_type,
-                "file_url": f.file_url,
+                "file_url": normalize_file_url(f.file_url),
                 "metadata": f.metadata_json,
             }
             for f in files
