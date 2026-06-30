@@ -144,7 +144,7 @@ S3 bucket → **Permissions** → **CORS**:
 | `S3_BUCKET` | `geoai-files-prod` |
 | `S3_ACCESS_KEY` | IAM access key ID |
 | `S3_SECRET_KEY` | IAM secret |
-| `S3_REGION` | `us-west-2` |
+| `S3_REGION` | **Must match bucket region** — e.g. `us-west-2` (Oregon) or `eu-north-1` (Stockholm) |
 | `PUBLIC_API_URL` | `https://geoai-api-91oc.onrender.com` |
 
 **Leave `S3_ENDPOINT` unset** for native AWS S3.

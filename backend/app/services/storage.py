@@ -83,16 +83,28 @@ def _get_s3():
         return None
     try:
         import boto3
+        from botocore.config import Config
 
         kwargs: dict = {
             "aws_access_key_id": settings.S3_ACCESS_KEY,
             "aws_secret_access_key": settings.S3_SECRET_KEY,
+            "config": Config(signature_version="s3v4"),
         }
         if settings.S3_ENDPOINT:
             kwargs["endpoint_url"] = settings.S3_ENDPOINT
         if settings.S3_REGION:
             kwargs["region_name"] = settings.S3_REGION
         client = boto3.client("s3", **kwargs)
+        # Align client region with bucket location (fixes 403 on presigned URLs).
+        if not settings.S3_ENDPOINT:
+            try:
+                loc = client.get_bucket_location(Bucket=settings.S3_BUCKET)
+                bucket_region = loc.get("LocationConstraint") or "us-east-1"
+                if bucket_region != kwargs.get("region_name"):
+                    kwargs["region_name"] = bucket_region
+                    client = boto3.client("s3", **kwargs)
+            except Exception:
+                logger.debug("Could not resolve bucket region; using configured S3_REGION", exc_info=True)
         _ensure_bucket(client, settings.S3_BUCKET)
         _s3_client = client
         target = settings.S3_ENDPOINT or f"aws:s3:{settings.S3_REGION or 'default'}"
