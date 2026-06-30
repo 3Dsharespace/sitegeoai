@@ -223,7 +223,9 @@ python backend/scripts/production_smoke.py --base-url http://localhost:8000
      -H "Content-Type: application/json" \
      -d '{"name":"Admin","email":"you@company.com","password":"YourSecurePass1"}'
    ```
-2. Promote to admin (from repo, with `DATABASE_URL` set):
+2. Promote to admin — **either**:
+   - **Render (easiest):** set `BOOTSTRAP_ADMIN_EMAIL=you@company.com` on the `geoai-backend` env group, redeploy **geoai-api**, log in again, then **remove** the var.
+   - **Local script** (with production `DATABASE_URL`):
    ```bash
    cd backend
    python scripts/create_admin.py you@company.com

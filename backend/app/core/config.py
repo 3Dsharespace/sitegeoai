@@ -23,6 +23,8 @@ class Settings(BaseSettings):
     S3_REGION: str = ""
     # Public API URL for /files/ links (defaults to RENDER_EXTERNAL_URL on Render).
     PUBLIC_API_URL: str = ""
+    # If set, promote this registered user to admin on API startup (remove after first use).
+    BOOTSTRAP_ADMIN_EMAIL: str = ""
 
     GOOGLE_MAPS_API_KEY: str = ""
     CESIUM_ION_TOKEN: str = ""

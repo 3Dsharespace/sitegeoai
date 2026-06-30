@@ -10,6 +10,8 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.core.plans import PLAN_ADMIN
+from app.core.security import ROLE_ADMIN
 from app.db.models import Base, ProjectTemplate, RateItem, User
 from app.db.session import IS_POSTGRES, SessionLocal, engine
 
@@ -116,6 +118,23 @@ def _seed_dev_user(db: Session) -> None:
                 dev_user.plan = "admin"
 
 
+def _bootstrap_admin(db: Session) -> None:
+    """Promote BOOTSTRAP_ADMIN_EMAIL to admin if the user already registered."""
+    email = (settings.BOOTSTRAP_ADMIN_EMAIL or "").strip().lower()
+    if not email:
+        return
+    user = db.query(User).filter(User.email == email).first()
+    if user is None:
+        logger.warning("BOOTSTRAP_ADMIN_EMAIL=%s — user not found yet; register first", email)
+        return
+    if user.role == ROLE_ADMIN and user.plan == PLAN_ADMIN:
+        logger.info("Bootstrap admin already set: %s (id=%s)", email, user.id)
+        return
+    user.role = ROLE_ADMIN
+    user.plan = PLAN_ADMIN
+    logger.info("Promoted bootstrap admin: %s (id=%s)", email, user.id)
+
+
 def init_db() -> None:
     if IS_POSTGRES:
         with engine.connect() as conn:
@@ -156,6 +175,7 @@ def init_db() -> None:
             from app.db.demo_seed import ensure_demo_project
 
             ensure_demo_project(db)
+        _bootstrap_admin(db)
         db.commit()
         logger.info("Database initialized (postgis=%s)", IS_POSTGRES)
     finally:
